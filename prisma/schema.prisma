@@ -25,3 +25,27 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+model User {
+  id        String   @id @default(uuid())
+  type      String   // e.g., "INDIVIDUAL" or "BUSINESS"
+  name      String
+  email     String   @unique
+  password  String?
+  googleId  String?  @unique
+  appleId   String?  @unique
+  address   String?
+  phone     String?
+  portfolio PortfolioImage[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PortfolioImage {
+  id        String   @id @default(uuid())
+  url       String
+  title     String?
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+}
