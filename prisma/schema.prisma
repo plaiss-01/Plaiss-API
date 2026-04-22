@@ -8,7 +8,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Product {
@@ -29,6 +29,8 @@ model Product {
 model User {
   id        String   @id @default(uuid())
   type      String   // e.g., "INDIVIDUAL" or "BUSINESS"
+  role      String   @default("USER") // "USER" or "ADMIN"
+
   name      String
   email     String   @unique
   password  String?
@@ -45,7 +47,8 @@ model PortfolioImage {
   id        String   @id @default(uuid())
   url       String
   title     String?
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   userId    String
   createdAt DateTime @default(now())
 }

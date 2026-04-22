@@ -25,11 +25,29 @@ let UsersController = class UsersController {
     async registerIndividual(dto) {
         return this.usersService.registerIndividual(dto);
     }
+    async registerDesigner(dto) {
+        return this.usersService.registerDesigner(dto);
+    }
     async getAllUsers() {
         return this.usersService.getAllUsers();
     }
+    async getDesigners() {
+        return this.usersService.getDesigners();
+    }
+    async getDesignerById(id) {
+        return this.usersService.getDesignerById(id);
+    }
     async getUserById(id) {
         return this.usersService.getUserById(id);
+    }
+    async updateUser(id, dto) {
+        return this.usersService.updateUser(id, dto);
+    }
+    async deleteUser(id) {
+        return this.usersService.deleteUser(id);
+    }
+    async login(dto) {
+        return this.usersService.login(dto);
     }
 };
 exports.UsersController = UsersController;
@@ -44,12 +62,36 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "registerIndividual", null);
 __decorate([
+    (0, common_1.Post)('register/designer'),
+    (0, swagger_1.ApiOperation)({ summary: 'Register a new interior designer' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Designer successfully registered.' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "registerDesigner", null);
+__decorate([
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get all registered users' }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getAllUsers", null);
+__decorate([
+    (0, common_1.Get)('designers/list'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all interior designers' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getDesigners", null);
+__decorate([
+    (0, common_1.Get)('designers/:id'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get designer by ID' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getDesignerById", null);
 __decorate([
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Get user by ID' }),
@@ -58,6 +100,31 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getUserById", null);
+__decorate([
+    (0, common_1.Patch)(':id'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update user' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "updateUser", null);
+__decorate([
+    (0, common_1.Delete)(':id'),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete user' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "deleteUser", null);
+__decorate([
+    (0, common_1.Post)('login'),
+    (0, swagger_1.ApiOperation)({ summary: 'User login' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "login", null);
 exports.UsersController = UsersController = __decorate([
     (0, swagger_1.ApiTags)('users'),
     (0, common_1.Controller)('users'),

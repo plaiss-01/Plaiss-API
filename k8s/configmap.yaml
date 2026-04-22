@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plaiss-api-config
+data:
+  NODE_ENV: "production"
+  PORT: "3001"
+  DATABASE_URL: "postgresql://username:password@hostname:5432/dbname?schema=public"
+  # Add other env vars here

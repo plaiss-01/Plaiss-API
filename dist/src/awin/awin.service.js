@@ -158,6 +158,7 @@ let AwinService = AwinService_1 = class AwinService {
                     merchant: this.extractMerchant(url),
                 },
             });
+            this.logger.log(`Successfully created product: ${product.name} (ID: ${product.id})`);
             return product;
         }
         catch (error) {

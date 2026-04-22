@@ -131,7 +131,9 @@ export class AwinService {
         },
       });
 
+      this.logger.log(`Successfully created product: ${product.name} (ID: ${product.id})`);
       return product;
+
     } catch (error) {
       this.logger.error(`Failed to add product: ${error.message}`);
       throw error;

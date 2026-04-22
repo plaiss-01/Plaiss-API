@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plaiss-api
+  labels:
+    app: plaiss-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plaiss-api
+  template:
+    metadata:
+      labels:
+        app: plaiss-api
+    spec:
+      containers:
+      - name: plaiss-api
+        image: <YOUR_ECR_REPOSITORY_URL>:latest # Replace with your ECR URL
+        ports:
+        - containerPort: 3001
+        envFrom:
+        - configMapRef:
+            name: plaiss-api-config
+        # If using SQLite with persistence, you'd add volumeMounts here
+        # For production RDS, use env vars for DB connection
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plaiss-api-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: plaiss-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3001

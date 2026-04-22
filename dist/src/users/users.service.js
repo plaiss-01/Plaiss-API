@@ -51,6 +51,31 @@ let UsersService = class UsersService {
     constructor(prisma) {
         this.prisma = prisma;
     }
+    async onModuleInit() {
+        await this.createSuperAdmin();
+    }
+    async createSuperAdmin() {
+        const adminEmail = 'admin@plaiss.com';
+        const existingAdmin = await this.prisma.user.findUnique({
+            where: { email: adminEmail },
+        });
+        if (!existingAdmin) {
+            const hashedPassword = crypto
+                .createHash('sha256')
+                .update('admin123')
+                .digest('hex');
+            await this.prisma.user.create({
+                data: {
+                    name: 'Super Admin',
+                    email: adminEmail,
+                    password: hashedPassword,
+                    type: 'ADMIN',
+                    role: 'ADMIN',
+                },
+            });
+            console.log('Super Admin created: admin@plaiss.com / admin123');
+        }
+    }
     async registerIndividual(dto) {
         const existingUser = await this.prisma.user.findUnique({
             where: { email: dto.email },
@@ -70,11 +95,79 @@ let UsersService = class UsersService {
             },
         });
     }
+    async registerDesigner(dto) {
+        const { portfolio, ...userData } = dto;
+        const existingUser = await this.prisma.user.findUnique({
+            where: { email: userData.email },
+        });
+        if (existingUser) {
+            throw new common_1.ConflictException('Email already registered');
+        }
+        const hashedPassword = crypto
+            .createHash('sha256')
+            .update(userData.password)
+            .digest('hex');
+        return this.prisma.user.create({
+            data: {
+                ...userData,
+                password: hashedPassword,
+                type: 'INTERIOR_DESIGNER',
+                portfolio: {
+                    create: portfolio,
+                },
+            },
+            include: {
+                portfolio: true,
+            },
+        });
+    }
     async getAllUsers() {
         return this.prisma.user.findMany();
     }
+    async getDesigners() {
+        return this.prisma.user.findMany({
+            where: { type: 'INTERIOR_DESIGNER' },
+            include: { portfolio: true },
+        });
+    }
+    async getDesignerById(id) {
+        return this.prisma.user.findFirst({
+            where: { id, type: 'INTERIOR_DESIGNER' },
+            include: { portfolio: true },
+        });
+    }
     async getUserById(id) {
         return this.prisma.user.findUnique({ where: { id } });
+    }
+    async updateUser(id, data) {
+        return this.prisma.user.update({
+            where: { id },
+            data,
+        });
+    }
+    async deleteUser(id) {
+        await this.prisma.portfolioImage.deleteMany({
+            where: { userId: id },
+        });
+        return this.prisma.user.delete({
+            where: { id },
+        });
+    }
+    async login(dto) {
+        const hashedPassword = crypto
+            .createHash('sha256')
+            .update(dto.password)
+            .digest('hex');
+        const user = await this.prisma.user.findFirst({
+            where: {
+                email: dto.email,
+                password: hashedPassword,
+            },
+        });
+        if (!user) {
+            throw new common_1.ConflictException('Invalid credentials');
+        }
+        return user;
     }
 };
 exports.UsersService = UsersService;
