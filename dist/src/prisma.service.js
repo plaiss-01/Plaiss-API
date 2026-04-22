@@ -41,6 +41,7 @@ var __importStar = (this && this.__importStar) || (function () {
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var PrismaService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PrismaService = void 0;
 const common_1 = require("@nestjs/common");
@@ -48,12 +49,14 @@ const client_1 = require("@prisma/client");
 const adapter_pg_1 = require("@prisma/adapter-pg");
 const pg_1 = require("pg");
 const adapter_libsql_1 = require("@prisma/adapter-libsql");
+const config_1 = require("@nestjs/config");
 const path = __importStar(require("path"));
-let PrismaService = class PrismaService extends client_1.PrismaClient {
-    constructor() {
-        const url = process.env.DATABASE_URL;
+let PrismaService = PrismaService_1 = class PrismaService extends client_1.PrismaClient {
+    logger;
+    constructor(configService) {
+        const url = configService.get('DATABASE_URL');
         const logOptions = ['query', 'info', 'warn', 'error'];
-        if (url?.startsWith('postgresql://')) {
+        if (url?.startsWith('postgresql://') || url?.startsWith('postgres://')) {
             const pool = new pg_1.Pool({ connectionString: url });
             const adapter = new adapter_pg_1.PrismaPg(pool);
             super({ adapter, log: logOptions });
@@ -70,6 +73,8 @@ let PrismaService = class PrismaService extends client_1.PrismaClient {
             });
             super({ adapter, log: logOptions });
         }
+        this.logger = new common_1.Logger(PrismaService_1.name);
+        this.logger.log('PrismaClient initialized.');
     }
     async onModuleInit() {
         await this.$connect();
@@ -79,8 +84,8 @@ let PrismaService = class PrismaService extends client_1.PrismaClient {
     }
 };
 exports.PrismaService = PrismaService;
-exports.PrismaService = PrismaService = __decorate([
+exports.PrismaService = PrismaService = PrismaService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [])
+    __metadata("design:paramtypes", [config_1.ConfigService])
 ], PrismaService);
 //# sourceMappingURL=prisma.service.js.map

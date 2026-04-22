@@ -8,9 +8,9 @@ import * as path from 'path';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(PrismaService.name);
+  private readonly logger: Logger;
 
-  constructor(private configService: ConfigService) {
+  constructor(configService: ConfigService) {
     const url = configService.get<string>('DATABASE_URL');
     const logOptions = ['query', 'info', 'warn', 'error'] as const;
     
@@ -33,6 +33,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       super({ adapter, log: logOptions as any });
     }
 
+    this.logger = new Logger(PrismaService.name);
     this.logger.log('PrismaClient initialized.');
   }
 

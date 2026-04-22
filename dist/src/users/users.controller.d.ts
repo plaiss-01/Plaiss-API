@@ -8,21 +8,21 @@ export declare class UsersController {
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     }>;
     registerDesigner(dto: any): Promise<{
         portfolio: {
-            url: string;
             id: string;
             createdAt: Date;
             title: string | null;
+            url: string;
             userId: string;
         }[];
     } & {
@@ -30,35 +30,35 @@ export declare class UsersController {
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     }>;
     getAllUsers(): Promise<{
         id: string;
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     }[]>;
     getDesigners(): Promise<({
         portfolio: {
-            url: string;
             id: string;
             createdAt: Date;
             title: string | null;
+            url: string;
             userId: string;
         }[];
     } & {
@@ -66,21 +66,21 @@ export declare class UsersController {
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     })[]>;
     getDesignerById(id: string): Promise<({
         portfolio: {
-            url: string;
             id: string;
             createdAt: Date;
             title: string | null;
+            url: string;
             userId: string;
         }[];
     } & {
@@ -88,69 +88,69 @@ export declare class UsersController {
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     }) | null>;
     getUserById(id: string): Promise<{
         id: string;
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     } | null>;
     updateUser(id: string, dto: any): Promise<{
         id: string;
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     }>;
     deleteUser(id: string): Promise<{
         id: string;
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     }>;
     login(dto: any): Promise<{
         id: string;
         name: string;
         createdAt: Date;
         updatedAt: Date;
-        type: string;
         email: string;
+        googleId: string | null;
+        appleId: string | null;
+        type: string;
+        role: string;
         password: string | null;
         address: string | null;
         phone: string | null;
-        googleId: string | null;
-        appleId: string | null;
-        role: string;
     }>;
 }
