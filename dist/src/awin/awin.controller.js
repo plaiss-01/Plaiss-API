@@ -38,6 +38,15 @@ let AwinController = class AwinController {
                 skip,
                 take: l,
                 orderBy: { createdAt: 'desc' },
+                select: {
+                    id: true,
+                    name: true,
+                    price: true,
+                    imageUrl: true,
+                    category: true,
+                    merchant: true,
+                    productUrl: true,
+                },
             }),
             this.prisma.product.count(),
         ]);
@@ -50,6 +59,10 @@ let AwinController = class AwinController {
                 totalPages: Math.ceil(total / l),
             },
         };
+    }
+    async getProductBySlug(slug) {
+        const all = await this.prisma.product.findMany();
+        return all.find(p => p.name.toLowerCase().replace(/ /g, '-') === slug.toLowerCase());
     }
     async getProductById(id) {
         return this.prisma.product.findUnique({ where: { id } });
@@ -84,6 +97,15 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
+__decorate([
+    (0, common_1.Get)('products/by-slug/:slug'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get a product by slug' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Return the product.' }),
+    __param(0, (0, common_1.Param)('slug')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "getProductBySlug", null);
 __decorate([
     (0, common_1.Get)('products/:id'),
     (0, swagger_1.ApiOperation)({ summary: 'Get a product by ID' }),

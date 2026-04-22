@@ -36,6 +36,16 @@ export class AwinController {
         skip,
         take: l,
         orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          imageUrl: true,
+          category: true,
+          merchant: true,
+          productUrl: true,
+          // Exclude description for list view to keep payload small
+        },
       }),
       this.prisma.product.count(),
     ]);
@@ -49,6 +59,16 @@ export class AwinController {
         totalPages: Math.ceil(total / l),
       },
     };
+  }
+
+  @Get('products/by-slug/:slug')
+  @ApiOperation({ summary: 'Get a product by slug' })
+  @ApiResponse({ status: 200, description: 'Return the product.' })
+  async getProductBySlug(@Param('slug') slug: string) {
+    // Note: In a real app, you'd store the slug in the DB. 
+    // Here we find it by name comparison since we don't have a slug field yet.
+    const all = await this.prisma.product.findMany();
+    return all.find(p => p.name.toLowerCase().replace(/ /g, '-') === slug.toLowerCase());
   }
 
   @Get('products/:id')
