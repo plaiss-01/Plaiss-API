@@ -34,56 +34,50 @@ export class AwinService {
       const stream = response.data as Readable;
       let count = 0;
 
-      return new Promise((resolve, reject) => {
-        stream
-          .pipe(zlib.createGunzip())
-          .pipe(csv.parse({ headers: true }))
-          .on('data', async (row) => {
-            try {
-              // Mapping Awin CSV columns to our schema
-              await this.prisma.product.upsert({
-                where: { awinId: row.aw_product_id },
-                update: {
-                  name: row.product_name,
-                  description: row.description,
-                  price: parseFloat(row.search_price) || 0,
-                  currency: row.currency,
-                  imageUrl: row.merchant_image_url || row.aw_image_url,
-                  productUrl: row.aw_deep_link,
-                  merchant: row.merchant_name,
-                  category: row.category_name,
-                },
-                create: {
-                  awinId: row.aw_product_id,
-                  name: row.product_name,
-                  description: row.description,
-                  price: parseFloat(row.search_price) || 0,
-                  currency: row.currency,
-                  imageUrl: row.merchant_image_url || row.aw_image_url,
-                  productUrl: row.aw_deep_link,
-                  merchant: row.merchant_name,
-                  category: row.category_name,
-                },
-              });
-              count++;
-              if (count % 100 === 0) {
-                this.logger.log(`Imported ${count} products...`);
-              }
-            } catch (err) {
-              this.logger.error(`Error saving product ${row.aw_product_id}: ${err.message}`);
-            }
-          })
-          .on('end', () => {
-            this.logger.log(`Feed processing complete. Total imported: ${count}`);
-            resolve({ message: 'Feed processed successfully', count });
-          })
-          .on('error', (error) => {
-            this.logger.error(`Feed processing failed: ${error.message}`);
-            reject(error);
+      const parser = stream
+        .pipe(zlib.createGunzip())
+        .pipe(csv.parse({ headers: true }));
+
+      for await (const row of parser) {
+        try {
+          // Mapping Awin CSV columns to our schema
+          await this.prisma.product.upsert({
+            where: { awinId: row.aw_product_id },
+            update: {
+              name: row.product_name,
+              description: row.description,
+              price: parseFloat(row.search_price) || 0,
+              currency: row.currency,
+              imageUrl: row.merchant_image_url || row.aw_image_url,
+              productUrl: row.aw_deep_link,
+              merchant: row.merchant_name,
+              category: row.category_name,
+            },
+            create: {
+              awinId: row.aw_product_id,
+              name: row.product_name,
+              description: row.description,
+              price: parseFloat(row.search_price) || 0,
+              currency: row.currency,
+              imageUrl: row.merchant_image_url || row.aw_image_url,
+              productUrl: row.aw_deep_link,
+              merchant: row.merchant_name,
+              category: row.category_name,
+            },
           });
-      });
+          count++;
+          if (count % 100 === 0) {
+            this.logger.log(`Imported ${count} products...`);
+          }
+        } catch (err) {
+          this.logger.error(`Error saving product ${row.aw_product_id}: ${err.message}`);
+        }
+      }
+
+      this.logger.log(`Feed processing complete. Total imported: ${count}`);
+      return { message: 'Feed processed successfully', count };
     } catch (error) {
-      this.logger.error(`Failed to fetch feed: ${error.message}`);
+      this.logger.error(`Failed to process feed: ${error.message}`);
       throw error;
     }
   }

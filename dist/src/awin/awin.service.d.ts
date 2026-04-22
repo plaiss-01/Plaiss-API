@@ -5,8 +5,27 @@ export declare class AwinService {
     private readonly prisma;
     private readonly logger;
     constructor(httpService: HttpService, prisma: PrismaService);
-    addProductFromUrl(url: string): Promise<unknown>;
-    processFeed(url: string): Promise<unknown>;
+    addProductFromUrl(url: string): Promise<{
+        message: string;
+        count: number;
+    } | {
+        id: string;
+        awinId: string | null;
+        name: string;
+        description: string | null;
+        price: number | null;
+        currency: string | null;
+        imageUrl: string | null;
+        productUrl: string | null;
+        merchant: string | null;
+        category: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
+    processFeed(url: string): Promise<{
+        message: string;
+        count: number;
+    }>;
     scrapeSingleProduct(url: string): Promise<{
         id: string;
         awinId: string | null;

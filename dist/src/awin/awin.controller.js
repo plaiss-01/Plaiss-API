@@ -29,8 +29,27 @@ let AwinController = class AwinController {
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
     }
-    async getAllProducts() {
-        return this.prisma.product.findMany();
+    async getAllProducts(page = '1', limit = '10') {
+        const p = parseInt(page, 10) || 1;
+        const l = parseInt(limit, 10) || 10;
+        const skip = (p - 1) * l;
+        const [data, total] = await Promise.all([
+            this.prisma.product.findMany({
+                skip,
+                take: l,
+                orderBy: { createdAt: 'desc' },
+            }),
+            this.prisma.product.count(),
+        ]);
+        return {
+            data,
+            meta: {
+                total,
+                page: p,
+                limit: l,
+                totalPages: Math.ceil(total / l),
+            },
+        };
     }
     async getProductById(id) {
         return this.prisma.product.findUnique({ where: { id } });
@@ -57,10 +76,12 @@ __decorate([
 ], AwinController.prototype, "addProduct", null);
 __decorate([
     (0, common_1.Get)('products'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get all saved products' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Return all products.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all saved products with pagination' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Return paginated products.' }),
+    __param(0, (0, common_1.Query)('page')),
+    __param(1, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
 __decorate([

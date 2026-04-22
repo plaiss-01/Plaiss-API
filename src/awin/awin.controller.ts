@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AwinService } from './awin.service';
 import { PrismaService } from '../prisma.service';
@@ -21,10 +21,34 @@ export class AwinController {
   }
 
   @Get('products')
-  @ApiOperation({ summary: 'Get all saved products' })
-  @ApiResponse({ status: 200, description: 'Return all products.' })
-  async getAllProducts() {
-    return this.prisma.product.findMany();
+  @ApiOperation({ summary: 'Get all saved products with pagination' })
+  @ApiResponse({ status: 200, description: 'Return paginated products.' })
+  async getAllProducts(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+  ) {
+    const p = parseInt(page, 10) || 1;
+    const l = parseInt(limit, 10) || 10;
+    const skip = (p - 1) * l;
+
+    const [data, total] = await Promise.all([
+      this.prisma.product.findMany({
+        skip,
+        take: l,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.product.count(),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page: p,
+        limit: l,
+        totalPages: Math.ceil(total / l),
+      },
+    };
   }
 
   @Get('products/:id')

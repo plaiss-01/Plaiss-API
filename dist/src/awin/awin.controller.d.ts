@@ -6,8 +6,7 @@ export declare class AwinController {
     private readonly awinService;
     private readonly prisma;
     constructor(awinService: AwinService, prisma: PrismaService);
-    addProduct(createProductDto: CreateProductDto): Promise<unknown>;
-    getAllProducts(): Promise<{
+    addProduct(createProductDto: CreateProductDto): Promise<{
         id: string;
         awinId: string | null;
         name: string;
@@ -20,7 +19,32 @@ export declare class AwinController {
         category: string | null;
         createdAt: Date;
         updatedAt: Date;
-    }[]>;
+    } | {
+        message: string;
+        count: number;
+    }>;
+    getAllProducts(page?: string, limit?: string): Promise<{
+        data: {
+            id: string;
+            awinId: string | null;
+            name: string;
+            description: string | null;
+            price: number | null;
+            currency: string | null;
+            imageUrl: string | null;
+            productUrl: string | null;
+            merchant: string | null;
+            category: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+        }[];
+        meta: {
+            total: number;
+            page: number;
+            limit: number;
+            totalPages: number;
+        };
+    }>;
     getProductById(id: string): Promise<{
         id: string;
         awinId: string | null;
