@@ -1,22 +1,25 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { PrismaLibSql } from '@prisma/adapter-libsql';
+import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  constructor() {
-    const url = process.env.DATABASE_URL;
+  private readonly logger = new Logger(PrismaService.name);
+
+  constructor(private configService: ConfigService) {
+    const url = configService.get<string>('DATABASE_URL');
     const logOptions = ['query', 'info', 'warn', 'error'] as const;
     
-    if (url?.startsWith('postgresql://')) {
+    if (url?.startsWith('postgresql://') || url?.startsWith('postgres://')) {
       const pool = new Pool({ connectionString: url });
       const adapter = new PrismaPg(pool);
       super({ adapter, log: logOptions as any });
     } else {
-      // For SQLite, ensure we use an absolute path for the file
+      // Fallback to SQLite/LibSQL if URL is not Postgres
       let sqliteUrl = url ?? 'file:./dev.db';
       if (sqliteUrl.startsWith('file:')) {
         const relativePath = sqliteUrl.replace('file:', '');
@@ -29,6 +32,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       });
       super({ adapter, log: logOptions as any });
     }
+
+    this.logger.log('PrismaClient initialized.');
   }
 
 
