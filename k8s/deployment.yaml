@@ -22,8 +22,10 @@ spec:
         envFrom:
         - configMapRef:
             name: plaiss-api-config
-        # If using SQLite with persistence, you'd add volumeMounts here
-        # For production RDS, use env vars for DB connection
+        - secretRef:
+            name: plaiss-api-secrets
+        # For production RDS, connection is managed via Secrets
+
 ---
 apiVersion: v1
 kind: Service

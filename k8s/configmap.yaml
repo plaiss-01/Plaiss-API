@@ -5,5 +5,4 @@ metadata:
 data:
   NODE_ENV: "production"
   PORT: "3001"
-  DATABASE_URL: "postgresql://username:password@hostname:5432/dbname?schema=public"
-  # Add other env vars here
+  # Add other non-sensitive env vars here
