@@ -29,12 +29,20 @@ let AwinController = class AwinController {
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
     }
-    async getAllProducts(page = '1', limit = '10') {
+    async getAllProducts(page = '1', limit = '10', category) {
         const p = parseInt(page, 10) || 1;
         const l = parseInt(limit, 10) || 10;
         const skip = (p - 1) * l;
+        const where = {};
+        if (category && category !== 'all-products') {
+            where.category = {
+                contains: category,
+                mode: 'insensitive',
+            };
+        }
         const [data, total] = await Promise.all([
             this.prisma.product.findMany({
+                where,
                 skip,
                 take: l,
                 orderBy: { createdAt: 'desc' },
@@ -46,9 +54,10 @@ let AwinController = class AwinController {
                     category: true,
                     merchant: true,
                     productUrl: true,
+                    description: true,
                 },
             }),
-            this.prisma.product.count(),
+            this.prisma.product.count({ where }),
         ]);
         return {
             data,
@@ -59,6 +68,17 @@ let AwinController = class AwinController {
                 totalPages: Math.ceil(total / l),
             },
         };
+    }
+    async getCategories() {
+        const categories = await this.prisma.product.groupBy({
+            by: ['category'],
+        });
+        const uniqueSlugs = new Set(categories
+            .map(c => c.category?.toLowerCase().trim())
+            .filter(Boolean));
+        return Array.from(uniqueSlugs).map(slug => ({
+            slug,
+        }));
     }
     async getProductBySlug(slug) {
         const all = await this.prisma.product.findMany();
@@ -93,10 +113,18 @@ __decorate([
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Return paginated products.' }),
     __param(0, (0, common_1.Query)('page')),
     __param(1, (0, common_1.Query)('limit')),
+    __param(2, (0, common_1.Query)('category')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
+__decorate([
+    (0, common_1.Get)('categories'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all unique product categories' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "getCategories", null);
 __decorate([
     (0, common_1.Get)('products/by-slug/:slug'),
     (0, swagger_1.ApiOperation)({ summary: 'Get a product by slug' }),

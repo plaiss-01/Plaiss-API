@@ -26,13 +26,23 @@ export class AwinController {
   async getAllProducts(
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
+    @Query('category') category?: string,
   ) {
     const p = parseInt(page, 10) || 1;
     const l = parseInt(limit, 10) || 10;
     const skip = (p - 1) * l;
 
+    const where: any = {};
+    if (category && category !== 'all-products') {
+      where.category = {
+        contains: category,
+        mode: 'insensitive',
+      };
+    }
+
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
+        where,
         skip,
         take: l,
         orderBy: { createdAt: 'desc' },
@@ -44,10 +54,10 @@ export class AwinController {
           category: true,
           merchant: true,
           productUrl: true,
-          // Exclude description for list view to keep payload small
+          description: true,
         },
       }),
-      this.prisma.product.count(),
+      this.prisma.product.count({ where }),
     ]);
 
     return {
@@ -59,6 +69,25 @@ export class AwinController {
         totalPages: Math.ceil(total / l),
       },
     };
+  }
+
+  @Get('categories')
+  @ApiOperation({ summary: 'Get all unique product categories' })
+  async getCategories() {
+    const categories = await this.prisma.product.groupBy({
+      by: ['category'],
+    });
+    
+    // Normalize to lowercase and remove duplicates
+    const uniqueSlugs = new Set(
+      categories
+        .map(c => c.category?.toLowerCase().trim())
+        .filter(Boolean)
+    );
+
+    return Array.from(uniqueSlugs).map(slug => ({
+      slug,
+    }));
   }
 
   @Get('products/by-slug/:slug')

@@ -23,10 +23,11 @@ export declare class AwinController {
         message: string;
         count: number;
     }>;
-    getAllProducts(page?: string, limit?: string): Promise<{
+    getAllProducts(page?: string, limit?: string, category?: string): Promise<{
         data: {
             id: string;
             name: string;
+            description: string | null;
             price: number | null;
             imageUrl: string | null;
             productUrl: string | null;
@@ -40,6 +41,9 @@ export declare class AwinController {
             totalPages: number;
         };
     }>;
+    getCategories(): Promise<{
+        slug: string | undefined;
+    }[]>;
     getProductBySlug(slug: string): Promise<{
         id: string;
         awinId: string | null;
