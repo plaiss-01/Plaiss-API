@@ -3,9 +3,10 @@ import {
   Post,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { UploadService } from './upload.service';
 
@@ -40,5 +41,40 @@ export class UploadController {
     }
 
     return this.uploadService.uploadFile(file);
+  }
+
+  @Post('bulk')
+  @ApiOperation({ summary: 'Upload multiple images to S3' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  })
+  @UseInterceptors(FilesInterceptor('files'))
+  async uploadFiles(@UploadedFiles() files: Express.Multer.File[]) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No files uploaded');
+    }
+
+    // Validate all files are images
+    for (const file of files) {
+      if (!file.mimetype.startsWith('image/')) {
+        throw new BadRequestException(
+          `File ${file.originalname} is not an image`,
+        );
+      }
+    }
+
+    return this.uploadService.uploadFiles(files);
   }
 }

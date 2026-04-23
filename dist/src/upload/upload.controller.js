@@ -31,6 +31,17 @@ let UploadController = class UploadController {
         }
         return this.uploadService.uploadFile(file);
     }
+    async uploadFiles(files) {
+        if (!files || files.length === 0) {
+            throw new common_1.BadRequestException('No files uploaded');
+        }
+        for (const file of files) {
+            if (!file.mimetype.startsWith('image/')) {
+                throw new common_1.BadRequestException(`File ${file.originalname} is not an image`);
+            }
+        }
+        return this.uploadService.uploadFiles(files);
+    }
 };
 exports.UploadController = UploadController;
 __decorate([
@@ -54,6 +65,30 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UploadController.prototype, "uploadFile", null);
+__decorate([
+    (0, common_1.Post)('bulk'),
+    (0, swagger_1.ApiOperation)({ summary: 'Upload multiple images to S3' }),
+    (0, swagger_1.ApiConsumes)('multipart/form-data'),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                files: {
+                    type: 'array',
+                    items: {
+                        type: 'string',
+                        format: 'binary',
+                    },
+                },
+            },
+        },
+    }),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FilesInterceptor)('files')),
+    __param(0, (0, common_1.UploadedFiles)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Array]),
+    __metadata("design:returntype", Promise)
+], UploadController.prototype, "uploadFiles", null);
 exports.UploadController = UploadController = __decorate([
     (0, swagger_1.ApiTags)('upload'),
     (0, common_1.Controller)('upload'),

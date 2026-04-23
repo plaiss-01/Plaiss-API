@@ -6,4 +6,8 @@ export declare class UploadController {
         url: string;
         key: string;
     }>;
+    uploadFiles(files: Express.Multer.File[]): Promise<{
+        url: string;
+        key: string;
+    }[]>;
 }

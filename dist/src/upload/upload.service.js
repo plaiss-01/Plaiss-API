@@ -20,16 +20,33 @@ let UploadService = UploadService_1 = class UploadService {
     s3Client;
     logger = new common_1.Logger(UploadService_1.name);
     bucketName;
+    region;
     constructor(configService) {
         this.configService = configService;
+        this.region = (this.configService.get('S3_REGION') || '')
+            .trim()
+            .replace(/^["']|["']$/g, '');
+        const accessKeyId = (this.configService.get('AWS_ACCESS_KEY_ID') || '')
+            .trim()
+            .replace(/^["']|["']$/g, '');
+        const secretAccessKey = (this.configService.get('AWS_SECRET_ACCESS_KEY') || '')
+            .trim()
+            .replace(/^["']|["']$/g, '');
+        this.bucketName = (this.configService.get('S3_BUCKET') || '')
+            .trim()
+            .replace(/^["']|["']$/g, '');
         this.s3Client = new client_s3_1.S3Client({
-            region: this.configService.get('S3_REGION'),
+            region: this.region,
             credentials: {
-                accessKeyId: this.configService.get('AWS_ACCESS_KEY_ID'),
-                secretAccessKey: this.configService.get('AWS_SECRET_ACCESS_KEY'),
+                accessKeyId,
+                secretAccessKey,
             },
         });
-        this.bucketName = this.configService.get('S3_BUCKET');
+        console.log('S3 Configuration:', {
+            region: this.region,
+            bucket: this.bucketName,
+            accessKeyId: accessKeyId ? '***' + accessKeyId.slice(-4) : 'MISSING',
+        });
     }
     async uploadFile(file) {
         const key = `uploads/${(0, uuid_1.v4)()}-${file.originalname}`;
@@ -40,7 +57,12 @@ let UploadService = UploadService_1 = class UploadService {
                 Body: file.buffer,
                 ContentType: file.mimetype,
             }));
-            const url = `https://${this.bucketName}.s3.${this.configService.get('S3_REGION')}.amazonaws.com/${key}`;
+            const encodedKey = key
+                .split('/')
+                .map((segment) => encodeURIComponent(segment))
+                .join('/');
+            const url = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${encodedKey}`;
+            console.log('Generated S3 URL:', url);
             this.logger.log(`File uploaded successfully: ${url}`);
             return { url, key };
         }
@@ -48,6 +70,10 @@ let UploadService = UploadService_1 = class UploadService {
             this.logger.error(`Failed to upload file to S3: ${error.message}`);
             throw error;
         }
+    }
+    async uploadFiles(files) {
+        const uploadPromises = files.map((file) => this.uploadFile(file));
+        return Promise.all(uploadPromises);
     }
 };
 exports.UploadService = UploadService;
