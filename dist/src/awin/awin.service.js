@@ -123,34 +123,60 @@ let AwinService = AwinService_1 = class AwinService {
             const response = await (0, rxjs_1.firstValueFrom)(this.httpService.get(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 },
+                timeout: 10000,
             }));
             const html = response.data;
             const $ = cheerio.load(html);
-            const name = $('meta[property="og:title"]').attr('content') || $('title').text() || 'Unknown Product';
-            const description = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || '';
-            const imageUrl = $('meta[property="og:image"]').attr('content') || '';
+            const name = $('meta[property="og:title"]').attr('content') ||
+                $('meta[name="twitter:title"]').attr('content') ||
+                $('title').text() || 'Unknown Product';
+            const description = $('meta[property="og:description"]').attr('content') ||
+                $('meta[name="description"]').attr('content') || '';
+            const imageUrl = $('meta[property="og:image"]').attr('content') ||
+                $('meta[name="twitter:image"]').attr('content') || '';
             const productUrl = url;
             let price = 0;
-            let currency = 'USD';
-            const priceMeta = $('meta[property="product:price:amount"]').attr('content') || $('meta[name="twitter:data1"]').attr('content');
+            const priceMeta = $('meta[property="product:price:amount"]').attr('content') ||
+                $('meta[name="twitter:data1"]').attr('content') ||
+                $('[itemprop="price"]').attr('content');
             if (priceMeta) {
-                price = parseFloat(priceMeta.replace(/[^0-9.]/g, ''));
+                price = parseFloat(priceMeta.replace(/[^0-9.]/g, '')) || 0;
             }
-            const currencyMeta = $('meta[property="product:price:currency"]').attr('content') || 'USD';
-            currency = currencyMeta;
-            const product = await this.prisma.product.create({
-                data: {
+            const currency = $('meta[property="product:price:currency"]').attr('content') ||
+                $('meta[itemprop="priceCurrency"]').attr('content') || 'GBP';
+            const category = $('meta[property="product:category"]').attr('content') ||
+                $('meta[property="product:section"]').attr('content') ||
+                $('meta[name="category"]').attr('content') ||
+                'collection';
+            const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
+            const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
+            const product = await this.prisma.product.upsert({
+                where: { awinId: awinId },
+                update: {
                     name,
                     description,
                     price,
                     currency,
                     imageUrl,
                     productUrl,
+                    category: category.toLowerCase().trim(),
+                    merchant: this.extractMerchant(url),
+                },
+                create: {
+                    awinId,
+                    name,
+                    description,
+                    price,
+                    currency,
+                    imageUrl,
+                    productUrl,
+                    category: category.toLowerCase().trim(),
                     merchant: this.extractMerchant(url),
                 },
             });
-            this.logger.log(`Successfully created product: ${product.name} (ID: ${product.id})`);
+            this.logger.log(`Successfully processed product: ${product.name} (ID: ${product.id})`);
             return product;
         }
         catch (error) {
