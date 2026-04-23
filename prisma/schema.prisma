@@ -46,6 +46,7 @@ model User {
 model Category {
   id        String     @id @default(uuid())
   name      String     @unique
+  slug      String     @unique
   parentId  String?
   parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
   children  Category[] @relation("SubCategories")

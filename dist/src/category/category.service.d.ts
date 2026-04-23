@@ -2,6 +2,7 @@ import { PrismaService } from '../prisma.service';
 export declare class CategoryService {
     private readonly prisma;
     constructor(prisma: PrismaService);
+    private slugify;
     create(data: {
         name: string;
         parentId?: string;
@@ -9,6 +10,7 @@ export declare class CategoryService {
     }): Promise<any>;
     findAll(): Promise<any>;
     findOne(id: string): Promise<any>;
+    findBySlug(slug: string): Promise<any>;
     update(id: string, data: {
         name?: string;
         parentId?: string | null;

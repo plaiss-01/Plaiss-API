@@ -12,6 +12,7 @@ export declare class CategoryController {
         message: string;
         newlyCreated: number;
     }>;
+    findBySlug(slug: string): Promise<any>;
     findOne(id: string): Promise<any>;
     update(id: string, data: {
         name?: string;

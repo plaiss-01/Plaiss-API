@@ -28,6 +28,11 @@ export class CategoryController {
     return this.categoryService.syncAwinCategories();
   }
 
+  @Get('slug/:slug')
+  findBySlug(@Param('slug') slug: string) {
+    return this.categoryService.findBySlug(slug);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.categoryService.findOne(id);

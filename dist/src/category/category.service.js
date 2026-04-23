@@ -17,16 +17,25 @@ let CategoryService = class CategoryService {
     constructor(prisma) {
         this.prisma = prisma;
     }
+    slugify(text) {
+        return text
+            .toLowerCase()
+            .trim()
+            .replace(/[^\w\s-]/g, '')
+            .replace(/[\s_-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+    }
     async create(data) {
         try {
+            const slug = this.slugify(data.name);
             return await this.prisma.category.create({
-                data,
+                data: { ...data, slug },
                 include: { children: true, parent: true },
             });
         }
         catch (error) {
             if (error.code === 'P2002') {
-                throw new common_1.ConflictException('Category with this name already exists');
+                throw new common_1.ConflictException('Category with this name or slug already exists');
             }
             throw error;
         }
@@ -49,10 +58,23 @@ let CategoryService = class CategoryService {
             throw new common_1.NotFoundException('Category not found');
         return category;
     }
+    async findBySlug(slug) {
+        const category = await this.prisma.category.findUnique({
+            where: { slug },
+            include: { children: true, parent: true },
+        });
+        if (!category)
+            throw new common_1.NotFoundException('Category not found');
+        return category;
+    }
     async update(id, data) {
+        const updateData = { ...data };
+        if (data.name) {
+            updateData.slug = this.slugify(data.name);
+        }
         return this.prisma.category.update({
             where: { id },
-            data,
+            data: updateData,
             include: { children: true, parent: true },
         });
     }
@@ -70,19 +92,24 @@ let CategoryService = class CategoryService {
             .filter((name) => !!name && name !== '');
         const created = [];
         for (const name of awinCategoryNames) {
-            const existing = await this.prisma.category.findUnique({
-                where: { name },
+            const slug = this.slugify(name);
+            const existing = await this.prisma.category.findFirst({
+                where: { OR: [{ name }, { slug }] },
             });
             if (!existing) {
                 const cat = await this.prisma.category.create({
-                    data: { name, isAwin: true },
+                    data: { name, slug, isAwin: true },
                 });
                 created.push(cat);
             }
-            else if (!existing.isAwin) {
+            else {
+                const updateData = { isAwin: true };
+                if (!existing.slug) {
+                    updateData.slug = slug;
+                }
                 await this.prisma.category.update({
                     where: { id: existing.id },
-                    data: { isAwin: true },
+                    data: updateData,
                 });
             }
         }
