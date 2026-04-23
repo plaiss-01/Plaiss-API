@@ -20,6 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1035.0",
+    "@aws-sdk/s3-request-presigner": "^3.1035.0",
     "@libsql/client": "^0.17.2",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.0.1",
@@ -30,11 +32,13 @@
     "@prisma/adapter-libsql": "^7.7.0",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
+    "@types/multer": "^2.1.0",
     "axios": "^1.15.1",
     "cheerio": "^1.2.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "fast-csv": "^5.0.5",
+    "multer": "^2.1.1",
     "pg": "^8.20.0",
     "prisma": "^7.7.0",
     "reflect-metadata": "^0.2.2",

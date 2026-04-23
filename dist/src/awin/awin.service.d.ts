@@ -6,9 +6,6 @@ export declare class AwinService {
     private readonly logger;
     constructor(httpService: HttpService, prisma: PrismaService);
     addProductFromUrl(url: string): Promise<{
-        message: string;
-        count: number;
-    } | {
         id: string;
         awinId: string | null;
         name: string;
@@ -21,6 +18,9 @@ export declare class AwinService {
         category: string | null;
         createdAt: Date;
         updatedAt: Date;
+    } | {
+        message: string;
+        count: number;
     }>;
     processFeed(url: string): Promise<{
         message: string;
