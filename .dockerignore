@@ -11,6 +11,3 @@ test
 *.db-journal
 .prettierrc
 eslint.config.mjs
-nest-cli.json
-tsconfig.build.json
-tsconfig.json
