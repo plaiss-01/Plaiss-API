@@ -6,6 +6,7 @@ import { UsersModule } from './users/users.module';
 import { ConfigModule } from '@nestjs/config';
 import { UploadModule } from './upload/upload.module';
 import { CategoryModule } from './category/category.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { CategoryModule } from './category/category.module';
     UploadModule,
     CategoryModule
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [AppService],
 })
 export class AppModule {}

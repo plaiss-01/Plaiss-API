@@ -15,6 +15,7 @@ const users_module_1 = require("./users/users.module");
 const config_1 = require("@nestjs/config");
 const upload_module_1 = require("./upload/upload.module");
 const category_module_1 = require("./category/category.module");
+const health_controller_1 = require("./health.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -27,7 +28,7 @@ exports.AppModule = AppModule = __decorate([
             upload_module_1.UploadModule,
             category_module_1.CategoryModule
         ],
-        controllers: [app_controller_1.AppController],
+        controllers: [app_controller_1.AppController, health_controller_1.HealthController],
         providers: [app_service_1.AppService],
     })
 ], AppModule);
