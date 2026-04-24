@@ -94,10 +94,17 @@ export class AwinController {
   @ApiOperation({ summary: 'Get a product by slug' })
   @ApiResponse({ status: 200, description: 'Return the product.' })
   async getProductBySlug(@Param('slug') slug: string) {
-    // Note: In a real app, you'd store the slug in the DB. 
-    // Here we find it by name comparison since we don't have a slug field yet.
+    // Note: Temporary fix for slow lookup and mismatching slug logic.
+    // Ideally we should use a 'slug' field in the DB.
     const all = await this.prisma.product.findMany();
-    return all.find(p => p.name.toLowerCase().replace(/ /g, '-') === slug.toLowerCase());
+    return all.find(p => {
+      const pSlug = p.name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      return pSlug === slug.toLowerCase();
+    });
   }
 
   @Get('products/:id')

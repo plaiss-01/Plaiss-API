@@ -82,7 +82,14 @@ let AwinController = class AwinController {
     }
     async getProductBySlug(slug) {
         const all = await this.prisma.product.findMany();
-        return all.find(p => p.name.toLowerCase().replace(/ /g, '-') === slug.toLowerCase());
+        return all.find(p => {
+            const pSlug = p.name
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            return pSlug === slug.toLowerCase();
+        });
     }
     async getProductById(id) {
         return this.prisma.product.findUnique({ where: { id } });
