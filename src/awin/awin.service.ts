@@ -16,6 +16,15 @@ export class AwinService {
     private readonly prisma: PrismaService,
   ) {}
 
+  private slugify(text: string) {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
   async addProductFromUrl(url: string) {
     if (url.includes('datafeed/download')) {
       return this.processFeed(url);
@@ -45,6 +54,7 @@ export class AwinService {
             where: { awinId: row.aw_product_id },
             update: {
               name: row.product_name,
+              slug: this.slugify(row.product_name),
               description: row.description,
               price: parseFloat(row.search_price) || 0,
               currency: row.currency,
@@ -56,6 +66,7 @@ export class AwinService {
             create: {
               awinId: row.aw_product_id,
               name: row.product_name,
+              slug: this.slugify(row.product_name),
               description: row.description,
               price: parseFloat(row.search_price) || 0,
               currency: row.currency,
@@ -139,6 +150,7 @@ export class AwinService {
         where: { awinId: awinId },
         update: {
           name,
+          slug: this.slugify(name),
           description,
           price,
           currency,
@@ -150,6 +162,7 @@ export class AwinService {
         create: {
           awinId,
           name,
+          slug: this.slugify(name),
           description,
           price,
           currency,

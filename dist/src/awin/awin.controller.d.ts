@@ -17,6 +17,7 @@ export declare class AwinController {
         productUrl: string | null;
         merchant: string | null;
         category: string | null;
+        slug: string | null;
         createdAt: Date;
         updatedAt: Date;
     } | {
@@ -33,6 +34,8 @@ export declare class AwinController {
             productUrl: string | null;
             merchant: string | null;
             category: string | null;
+            slug: string | null;
+            createdAt: Date;
         }[];
         meta: {
             total: number;
@@ -55,6 +58,7 @@ export declare class AwinController {
         productUrl: string | null;
         merchant: string | null;
         category: string | null;
+        slug: string | null;
         createdAt: Date;
         updatedAt: Date;
     } | undefined>;
@@ -69,6 +73,7 @@ export declare class AwinController {
         productUrl: string | null;
         merchant: string | null;
         category: string | null;
+        slug: string | null;
         createdAt: Date;
         updatedAt: Date;
     } | null>;
@@ -83,6 +88,7 @@ export declare class AwinController {
         productUrl: string | null;
         merchant: string | null;
         category: string | null;
+        slug: string | null;
         createdAt: Date;
         updatedAt: Date;
     }>;
@@ -97,6 +103,7 @@ export declare class AwinController {
         productUrl: string | null;
         merchant: string | null;
         category: string | null;
+        slug: string | null;
         createdAt: Date;
         updatedAt: Date;
     }>;

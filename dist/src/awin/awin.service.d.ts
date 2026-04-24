@@ -5,6 +5,7 @@ export declare class AwinService {
     private readonly prisma;
     private readonly logger;
     constructor(httpService: HttpService, prisma: PrismaService);
+    private slugify;
     addProductFromUrl(url: string): Promise<{
         id: string;
         awinId: string | null;
@@ -16,6 +17,7 @@ export declare class AwinService {
         productUrl: string | null;
         merchant: string | null;
         category: string | null;
+        slug: string | null;
         createdAt: Date;
         updatedAt: Date;
     } | {
@@ -37,6 +39,7 @@ export declare class AwinService {
         productUrl: string | null;
         merchant: string | null;
         category: string | null;
+        slug: string | null;
         createdAt: Date;
         updatedAt: Date;
     }>;

@@ -34,10 +34,32 @@ export class AwinController {
 
     const where: any = {};
     if (category && category !== 'all-products') {
-      where.category = {
-        contains: category,
-        mode: 'insensitive',
-      };
+      // Find the category and all its children to include in the filter
+      const currentCat = await (this.prisma as any).category.findFirst({
+        where: { 
+          OR: [
+            { name: { equals: category, mode: 'insensitive' } },
+            { slug: { equals: category, mode: 'insensitive' } }
+          ]
+        },
+        include: { children: true }
+      });
+
+      if (currentCat) {
+        const children = (currentCat as any).children || [];
+        const categoryNames = [currentCat.name, ...children.map((c: any) => c.name)];
+        where.OR = categoryNames.map(name => ({
+          category: {
+            contains: name,
+            mode: 'insensitive'
+          }
+        }));
+      } else {
+        where.category = {
+          contains: category,
+          mode: 'insensitive',
+        };
+      }
     }
 
     const [data, total] = await Promise.all([
@@ -52,9 +74,11 @@ export class AwinController {
           price: true,
           imageUrl: true,
           category: true,
+          slug: true,
           merchant: true,
           productUrl: true,
           description: true,
+          createdAt: true,
         },
       }),
       this.prisma.product.count({ where }),

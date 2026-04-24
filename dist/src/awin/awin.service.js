@@ -59,6 +59,14 @@ let AwinService = AwinService_1 = class AwinService {
         this.httpService = httpService;
         this.prisma = prisma;
     }
+    slugify(text) {
+        return text
+            .toLowerCase()
+            .trim()
+            .replace(/[^\w\s-]/g, '')
+            .replace(/[\s_-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+    }
     async addProductFromUrl(url) {
         if (url.includes('datafeed/download')) {
             return this.processFeed(url);
@@ -80,6 +88,7 @@ let AwinService = AwinService_1 = class AwinService {
                         where: { awinId: row.aw_product_id },
                         update: {
                             name: row.product_name,
+                            slug: this.slugify(row.product_name),
                             description: row.description,
                             price: parseFloat(row.search_price) || 0,
                             currency: row.currency,
@@ -91,6 +100,7 @@ let AwinService = AwinService_1 = class AwinService {
                         create: {
                             awinId: row.aw_product_id,
                             name: row.product_name,
+                            slug: this.slugify(row.product_name),
                             description: row.description,
                             price: parseFloat(row.search_price) || 0,
                             currency: row.currency,
@@ -156,6 +166,7 @@ let AwinService = AwinService_1 = class AwinService {
                 where: { awinId: awinId },
                 update: {
                     name,
+                    slug: this.slugify(name),
                     description,
                     price,
                     currency,
@@ -167,6 +178,7 @@ let AwinService = AwinService_1 = class AwinService {
                 create: {
                     awinId,
                     name,
+                    slug: this.slugify(name),
                     description,
                     price,
                     currency,
