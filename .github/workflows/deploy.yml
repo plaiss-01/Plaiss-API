@@ -58,4 +58,12 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl set image deployment/plaiss-api plaiss-api=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -n dev
-          kubectl rollout status deployment/plaiss-api -n dev
+          kubectl rollout status deployment/plaiss-api -n dev --timeout=120s
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed - rolling back to previous version"
+          kubectl rollout undo deployment/plaiss-api -n dev
+          kubectl rollout status deployment/plaiss-api -n dev --timeout=60s
+          echo "Rollback complete"
