@@ -29,6 +29,12 @@ export class UsersController {
     return this.usersService.getAllUsers();
   }
 
+  @Get('designers/pending')
+  @ApiOperation({ summary: 'Get all pending interior designers' })
+  async getPendingDesigners() {
+    return this.usersService.getPendingDesigners();
+  }
+
   @Get('designers/list')
   @ApiOperation({ summary: 'Get all interior designers' })
   async getDesigners() {
@@ -59,11 +65,6 @@ export class UsersController {
     return this.usersService.deleteUser(id);
   }
 
-  @Get('designers/pending')
-  @ApiOperation({ summary: 'Get all pending interior designers' })
-  async getPendingDesigners() {
-    return this.usersService.getPendingDesigners();
-  }
 
   @Patch('designers/:id/approve')
   @ApiOperation({ summary: 'Approve or reject a designer' })

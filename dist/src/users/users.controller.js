@@ -31,6 +31,9 @@ let UsersController = class UsersController {
     async getAllUsers() {
         return this.usersService.getAllUsers();
     }
+    async getPendingDesigners() {
+        return this.usersService.getPendingDesigners();
+    }
     async getDesigners() {
         return this.usersService.getDesigners();
     }
@@ -45,9 +48,6 @@ let UsersController = class UsersController {
     }
     async deleteUser(id) {
         return this.usersService.deleteUser(id);
-    }
-    async getPendingDesigners() {
-        return this.usersService.getPendingDesigners();
     }
     async approveDesigner(id, isApproved) {
         return this.usersService.approveDesigner(id, isApproved);
@@ -83,6 +83,13 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "getAllUsers", null);
+__decorate([
+    (0, common_1.Get)('designers/pending'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all pending interior designers' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getPendingDesigners", null);
 __decorate([
     (0, common_1.Get)('designers/list'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all interior designers' }),
@@ -123,13 +130,6 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "deleteUser", null);
-__decorate([
-    (0, common_1.Get)('designers/pending'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get all pending interior designers' }),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
-    __metadata("design:returntype", Promise)
-], UsersController.prototype, "getPendingDesigners", null);
 __decorate([
     (0, common_1.Patch)('designers/:id/approve'),
     (0, swagger_1.ApiOperation)({ summary: 'Approve or reject a designer' }),

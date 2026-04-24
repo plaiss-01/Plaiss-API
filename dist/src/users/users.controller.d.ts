@@ -7,6 +7,8 @@ export declare class UsersController {
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
@@ -29,6 +31,8 @@ export declare class UsersController {
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
@@ -43,6 +47,8 @@ export declare class UsersController {
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
@@ -53,6 +59,7 @@ export declare class UsersController {
         createdAt: Date;
         updatedAt: Date;
     }[]>;
+    getPendingDesigners(): Promise<any>;
     getDesigners(): Promise<any>;
     getDesignerById(id: string): Promise<({
         portfolio: {
@@ -66,6 +73,8 @@ export declare class UsersController {
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
@@ -80,6 +89,8 @@ export declare class UsersController {
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
@@ -94,6 +105,8 @@ export declare class UsersController {
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
@@ -108,6 +121,8 @@ export declare class UsersController {
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
@@ -118,12 +133,13 @@ export declare class UsersController {
         createdAt: Date;
         updatedAt: Date;
     }>;
-    getPendingDesigners(): Promise<any>;
     approveDesigner(id: string, isApproved: boolean): Promise<any>;
     login(dto: any): Promise<{
         id: string;
         type: string;
         role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
         name: string;
         email: string;
         password: string | null;
