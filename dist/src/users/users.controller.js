@@ -46,6 +46,12 @@ let UsersController = class UsersController {
     async deleteUser(id) {
         return this.usersService.deleteUser(id);
     }
+    async getPendingDesigners() {
+        return this.usersService.getPendingDesigners();
+    }
+    async approveDesigner(id, isApproved) {
+        return this.usersService.approveDesigner(id, isApproved);
+    }
     async login(dto) {
         return this.usersService.login(dto);
     }
@@ -117,6 +123,22 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "deleteUser", null);
+__decorate([
+    (0, common_1.Get)('designers/pending'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all pending interior designers' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "getPendingDesigners", null);
+__decorate([
+    (0, common_1.Patch)('designers/:id/approve'),
+    (0, swagger_1.ApiOperation)({ summary: 'Approve or reject a designer' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)('isApproved')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Boolean]),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "approveDesigner", null);
 __decorate([
     (0, common_1.Post)('login'),
     (0, swagger_1.ApiOperation)({ summary: 'User login' }),

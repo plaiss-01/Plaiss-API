@@ -82,6 +82,9 @@ export class UsersService implements OnModuleInit {
         ...userData,
         password: hashedPassword,
         type: 'INTERIOR_DESIGNER',
+        isDesigner: true,
+        isApproved: false,
+        role: 'DESIGNER',
         portfolio: {
           create: portfolio,
         },
@@ -97,8 +100,11 @@ export class UsersService implements OnModuleInit {
   }
 
   async getDesigners() {
-    return this.prisma.user.findMany({
-      where: { type: 'INTERIOR_DESIGNER' },
+    return (this.prisma as any).user.findMany({
+      where: { 
+        type: 'INTERIOR_DESIGNER',
+        isApproved: true 
+      },
       include: { portfolio: true },
     });
   }
@@ -149,8 +155,24 @@ export class UsersService implements OnModuleInit {
     if (!user) {
       throw new ConflictException('Invalid credentials');
     }
-
     return user;
+  }
+
+  async approveDesigner(id: string, isApproved: boolean) {
+    return (this.prisma as any).user.update({
+      where: { id },
+      data: { isApproved },
+    });
+  }
+
+  async getPendingDesigners() {
+    return (this.prisma as any).user.findMany({
+      where: { 
+        type: 'INTERIOR_DESIGNER',
+        isApproved: false 
+      },
+      include: { portfolio: true },
+    });
   }
 }
 

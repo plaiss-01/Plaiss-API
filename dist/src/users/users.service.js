@@ -112,6 +112,9 @@ let UsersService = class UsersService {
                 ...userData,
                 password: hashedPassword,
                 type: 'INTERIOR_DESIGNER',
+                isDesigner: true,
+                isApproved: false,
+                role: 'DESIGNER',
                 portfolio: {
                     create: portfolio,
                 },
@@ -126,7 +129,10 @@ let UsersService = class UsersService {
     }
     async getDesigners() {
         return this.prisma.user.findMany({
-            where: { type: 'INTERIOR_DESIGNER' },
+            where: {
+                type: 'INTERIOR_DESIGNER',
+                isApproved: true
+            },
             include: { portfolio: true },
         });
     }
@@ -168,6 +174,21 @@ let UsersService = class UsersService {
             throw new common_1.ConflictException('Invalid credentials');
         }
         return user;
+    }
+    async approveDesigner(id, isApproved) {
+        return this.prisma.user.update({
+            where: { id },
+            data: { isApproved },
+        });
+    }
+    async getPendingDesigners() {
+        return this.prisma.user.findMany({
+            where: {
+                type: 'INTERIOR_DESIGNER',
+                isApproved: false
+            },
+            include: { portfolio: true },
+        });
     }
 };
 exports.UsersService = UsersService;

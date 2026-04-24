@@ -59,6 +59,21 @@ export class UsersController {
     return this.usersService.deleteUser(id);
   }
 
+  @Get('designers/pending')
+  @ApiOperation({ summary: 'Get all pending interior designers' })
+  async getPendingDesigners() {
+    return this.usersService.getPendingDesigners();
+  }
+
+  @Patch('designers/:id/approve')
+  @ApiOperation({ summary: 'Approve or reject a designer' })
+  async approveDesigner(
+    @Param('id') id: string,
+    @Body('isApproved') isApproved: boolean
+  ) {
+    return this.usersService.approveDesigner(id, isApproved);
+  }
+
   @Post('login')
   @ApiOperation({ summary: 'User login' })
   async login(@Body() dto: any) {
