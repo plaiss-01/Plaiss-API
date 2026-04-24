@@ -28,12 +28,21 @@ let CategoryService = class CategoryService {
     async create(data) {
         try {
             const slug = this.slugify(data.name);
+            const createData = {
+                name: data.name,
+                slug,
+                isAwin: data.isAwin || false,
+            };
+            if (data.parentId && data.parentId !== '') {
+                createData.parentId = data.parentId;
+            }
             return await this.prisma.category.create({
-                data: { ...data, slug },
+                data: createData,
                 include: { children: true, parent: true },
             });
         }
         catch (error) {
+            console.error('Error creating category:', error);
             if (error.code === 'P2002') {
                 throw new common_1.ConflictException('Category with this name or slug already exists');
             }
