@@ -2,6 +2,9 @@ import { PrismaService } from '../prisma.service';
 export declare class CategoryService {
     private readonly prisma;
     constructor(prisma: PrismaService);
+    private categoriesCache;
+    private readonly CACHE_TTL;
+    clearCache(): void;
     private slugify;
     create(data: {
         name: string;

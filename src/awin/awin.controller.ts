@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ImportStatusService } from './import-status.service';
+import { CategoryService } from '../category/category.service';
 
 @ApiTags('awin')
 @Controller('awin')
@@ -14,9 +15,10 @@ export class AwinController {
     private readonly awinService: AwinService,
     private readonly prisma: PrismaService,
     private readonly statusService: ImportStatusService,
+    private readonly categoryService: CategoryService,
   ) { }
 
-  private flatCategoriesCache: { data: any[], timestamp: number } | null = null;
+  private productsCache = new Map<string, { data: any, timestamp: number }>();
   private readonly CACHE_TTL = 60000; // 1 minute
 
   @Post('add-product')
@@ -59,6 +61,15 @@ export class AwinController {
     const l = parseInt(limit, 10) || 50000;
     const skip = (p - 1) * l;
 
+    const cacheKey = `products-${p}-${l}-${category || 'all'}`;
+    const now = Date.now();
+    if (this.productsCache.has(cacheKey)) {
+      const cached = this.productsCache.get(cacheKey)!;
+      if (now - cached.timestamp < this.CACHE_TTL) {
+        return cached.data;
+      }
+    }
+
     const where: any = {};
     if (category && category !== 'all-products') {
       const ROOM_MAPPINGS: Record<string, string[]> = {
@@ -85,14 +96,7 @@ export class AwinController {
         });
 
         if (currentCat) {
-          let allCats: any[];
-          const now = Date.now();
-          if (this.flatCategoriesCache && (now - this.flatCategoriesCache.timestamp < this.CACHE_TTL)) {
-            allCats = this.flatCategoriesCache.data;
-          } else {
-            allCats = await (this.prisma as any).category.findMany();
-            this.flatCategoriesCache = { data: allCats, timestamp: now };
-          }
+          const allCats = await this.categoryService.findAll();
           
           // Optimized lookup maps
           const categoryMap = new Map<string, any>();
@@ -156,7 +160,7 @@ export class AwinController {
       this.prisma.product.count({ where }),
     ]);
 
-    return {
+    const result = {
       data,
       meta: {
         total,
@@ -165,23 +169,15 @@ export class AwinController {
         totalPages: Math.ceil(total / l),
       },
     };
+
+    this.productsCache.set(cacheKey, { data: result, timestamp: now });
+    return result;
   }
 
   @Get('categories')
   @ApiOperation({ summary: 'Get all unique product categories with products' })
   async getCategories() {
-    // 1. Get all categories flat
-    let allCategories: any[];
-    const now = Date.now();
-    if (this.flatCategoriesCache && (now - this.flatCategoriesCache.timestamp < this.CACHE_TTL)) {
-      allCategories = this.flatCategoriesCache.data;
-    } else {
-      allCategories = await (this.prisma as any).category.findMany({
-        where: { isDeleted: false },
-        orderBy: { name: 'asc' }
-      });
-      this.flatCategoriesCache = { data: allCategories, timestamp: now };
-    }
+    const allCategories = await this.categoryService.findAll();
 
     // 2. Create optimized lookup maps
     const categoryMap = new Map<string, any>();

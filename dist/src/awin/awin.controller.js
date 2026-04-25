@@ -21,16 +21,19 @@ const prisma_service_1 = require("../prisma.service");
 const create_product_dto_1 = require("./dto/create-product.dto");
 const update_product_dto_1 = require("./dto/update-product.dto");
 const import_status_service_1 = require("./import-status.service");
+const category_service_1 = require("../category/category.service");
 let AwinController = class AwinController {
     awinService;
     prisma;
     statusService;
-    constructor(awinService, prisma, statusService) {
+    categoryService;
+    constructor(awinService, prisma, statusService, categoryService) {
         this.awinService = awinService;
         this.prisma = prisma;
         this.statusService = statusService;
+        this.categoryService = categoryService;
     }
-    flatCategoriesCache = null;
+    productsCache = new Map();
     CACHE_TTL = 60000;
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
@@ -50,6 +53,14 @@ let AwinController = class AwinController {
         const p = parseInt(page, 10) || 1;
         const l = parseInt(limit, 10) || 50000;
         const skip = (p - 1) * l;
+        const cacheKey = `products-${p}-${l}-${category || 'all'}`;
+        const now = Date.now();
+        if (this.productsCache.has(cacheKey)) {
+            const cached = this.productsCache.get(cacheKey);
+            if (now - cached.timestamp < this.CACHE_TTL) {
+                return cached.data;
+            }
+        }
         const where = {};
         if (category && category !== 'all-products') {
             const ROOM_MAPPINGS = {
@@ -75,15 +86,7 @@ let AwinController = class AwinController {
                     },
                 });
                 if (currentCat) {
-                    let allCats;
-                    const now = Date.now();
-                    if (this.flatCategoriesCache && (now - this.flatCategoriesCache.timestamp < this.CACHE_TTL)) {
-                        allCats = this.flatCategoriesCache.data;
-                    }
-                    else {
-                        allCats = await this.prisma.category.findMany();
-                        this.flatCategoriesCache = { data: allCats, timestamp: now };
-                    }
+                    const allCats = await this.categoryService.findAll();
                     const categoryMap = new Map();
                     const childrenMap = new Map();
                     allCats.forEach(cat => {
@@ -142,7 +145,7 @@ let AwinController = class AwinController {
             }),
             this.prisma.product.count({ where }),
         ]);
-        return {
+        const result = {
             data,
             meta: {
                 total,
@@ -151,20 +154,11 @@ let AwinController = class AwinController {
                 totalPages: Math.ceil(total / l),
             },
         };
+        this.productsCache.set(cacheKey, { data: result, timestamp: now });
+        return result;
     }
     async getCategories() {
-        let allCategories;
-        const now = Date.now();
-        if (this.flatCategoriesCache && (now - this.flatCategoriesCache.timestamp < this.CACHE_TTL)) {
-            allCategories = this.flatCategoriesCache.data;
-        }
-        else {
-            allCategories = await this.prisma.category.findMany({
-                where: { isDeleted: false },
-                orderBy: { name: 'asc' }
-            });
-            this.flatCategoriesCache = { data: allCategories, timestamp: now };
-        }
+        const allCategories = await this.categoryService.findAll();
         const categoryMap = new Map();
         const childrenMap = new Map();
         allCategories.forEach(cat => {
@@ -333,6 +327,7 @@ exports.AwinController = AwinController = __decorate([
     (0, common_1.Controller)('awin'),
     __metadata("design:paramtypes", [awin_service_1.AwinService,
         prisma_service_1.PrismaService,
-        import_status_service_1.ImportStatusService])
+        import_status_service_1.ImportStatusService,
+        category_service_1.CategoryService])
 ], AwinController);
 //# sourceMappingURL=awin.controller.js.map

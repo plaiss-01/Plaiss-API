@@ -5,6 +5,13 @@ import { PrismaService } from '../prisma.service';
 export class CategoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private categoriesCache: { data: any[], timestamp: number } | null = null;
+  private readonly CACHE_TTL = 60000;
+
+  clearCache() {
+    this.categoriesCache = null;
+  }
+
   private slugify(text: string) {
     return text
       .toLowerCase()
@@ -69,6 +76,7 @@ export class CategoryService {
         createData.parentId = data.parentId;
       }
 
+      this.clearCache();
       return await (this.prisma as any).category.create({
         data: createData,
         include: { children: true, parent: true },
@@ -81,14 +89,18 @@ export class CategoryService {
     }
   }
 
-
   async findAll(includeDeleted = false) {
+    const now = Date.now();
+    if (!includeDeleted && this.categoriesCache && (now - this.categoriesCache.timestamp < this.CACHE_TTL)) {
+      return this.categoriesCache.data;
+    }
+
     const where: any = {};
     if (!includeDeleted) {
       where.isDeleted = false;
     }
     
-    return (this.prisma as any).category.findMany({
+    const data = await (this.prisma as any).category.findMany({
       where,
       include: {
         children: {
@@ -98,6 +110,11 @@ export class CategoryService {
       },
       orderBy: { name: 'asc' },
     });
+
+    if (!includeDeleted) {
+      this.categoriesCache = { data, timestamp: now };
+    }
+    return data;
   }
 
   async findRoots() {
@@ -144,6 +161,7 @@ export class CategoryService {
     if (data.name) {
       updateData.slug = this.slugify(data.name);
     }
+    this.clearCache();
     return (this.prisma as any).category.update({
       where: { id },
       data: updateData,
@@ -152,6 +170,7 @@ export class CategoryService {
   }
 
   async remove(id: string) {
+    this.clearCache();
     return (this.prisma as any).category.update({
       where: { id },
       data: { isDeleted: true }
@@ -159,6 +178,7 @@ export class CategoryService {
   }
 
   async restore(id: string) {
+    this.clearCache();
     return (this.prisma as any).category.update({
       where: { id },
       data: { isDeleted: false }
@@ -202,6 +222,7 @@ export class CategoryService {
       }
     }
 
+    this.clearCache();
     return {
       message: `Synced ${awinCategoryNames.length} categories from Awin`,
       newlyCreated: created.length,

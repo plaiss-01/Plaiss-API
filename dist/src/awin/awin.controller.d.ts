@@ -3,12 +3,14 @@ import { PrismaService } from '../prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ImportStatusService } from './import-status.service';
+import { CategoryService } from '../category/category.service';
 export declare class AwinController {
     private readonly awinService;
     private readonly prisma;
     private readonly statusService;
-    constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService);
-    private flatCategoriesCache;
+    private readonly categoryService;
+    constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService, categoryService: CategoryService);
+    private productsCache;
     private readonly CACHE_TTL;
     addProduct(createProductDto: CreateProductDto): Promise<any>;
     uploadCsv(file: Express.Multer.File): Promise<{
@@ -21,27 +23,8 @@ export declare class AwinController {
         status: string;
         message: string;
     } | undefined>;
-    getAllProducts(page?: string, limit?: string, category?: string): Promise<{
-        data: {
-            id: string;
-            name: string;
-            slug: string | null;
-            description: string | null;
-            price: number | null;
-            imageUrl: string | null;
-            productUrl: string | null;
-            merchant: string | null;
-            category: string | null;
-            createdAt: Date;
-        }[];
-        meta: {
-            total: number;
-            page: number;
-            limit: number;
-            totalPages: number;
-        };
-    }>;
-    getCategories(): Promise<any[]>;
+    getAllProducts(page?: string, limit?: string, category?: string): Promise<any>;
+    getCategories(): Promise<any>;
     getProductBySlug(slug: string): Promise<{
         id: string;
         awinId: string | null;
