@@ -2,11 +2,19 @@ import { AwinService } from './awin.service';
 import { PrismaService } from '../prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { ImportStatusService } from './import-status.service';
 export declare class AwinController {
     private readonly awinService;
     private readonly prisma;
-    constructor(awinService: AwinService, prisma: PrismaService);
+    private readonly statusService;
+    constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService);
     addProduct(createProductDto: CreateProductDto): Promise<any>;
+    getImportStatus(id: string): Promise<{
+        current: number;
+        total: number;
+        status: string;
+        message: string;
+    } | undefined>;
     getAllProducts(page?: string, limit?: string, category?: string): Promise<{
         data: {
             id: string;

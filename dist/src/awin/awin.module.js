@@ -12,6 +12,7 @@ const axios_1 = require("@nestjs/axios");
 const awin_service_1 = require("./awin.service");
 const awin_controller_1 = require("./awin.controller");
 const prisma_service_1 = require("../prisma.service");
+const import_status_service_1 = require("./import-status.service");
 let AwinModule = class AwinModule {
 };
 exports.AwinModule = AwinModule;
@@ -19,7 +20,8 @@ exports.AwinModule = AwinModule = __decorate([
     (0, common_1.Module)({
         imports: [axios_1.HttpModule],
         controllers: [awin_controller_1.AwinController],
-        providers: [awin_service_1.AwinService, prisma_service_1.PrismaService],
+        providers: [awin_service_1.AwinService, prisma_service_1.PrismaService, import_status_service_1.ImportStatusService],
+        exports: [awin_service_1.AwinService, import_status_service_1.ImportStatusService],
     })
 ], AwinModule);
 //# sourceMappingURL=awin.module.js.map

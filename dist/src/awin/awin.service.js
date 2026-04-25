@@ -51,39 +51,80 @@ const rxjs_1 = require("rxjs");
 const cheerio = __importStar(require("cheerio"));
 const csv = __importStar(require("fast-csv"));
 const zlib = __importStar(require("zlib"));
+const import_status_service_1 = require("./import-status.service");
 let AwinService = AwinService_1 = class AwinService {
     httpService;
     prisma;
+    statusService;
     logger = new common_1.Logger(AwinService_1.name);
-    constructor(httpService, prisma) {
+    constructor(httpService, prisma, statusService) {
         this.httpService = httpService;
         this.prisma = prisma;
+        this.statusService = statusService;
     }
     slugify(text) {
+        if (!text)
+            return `product-${Date.now()}`;
         return text
+            .toString()
             .toLowerCase()
             .trim()
             .replace(/[^\w\s-]/g, '')
             .replace(/[\s_-]+/g, '-')
             .replace(/^-+|-+$/g, '');
     }
-    async addProductFromUrl(url) {
-        if (url.includes('datafeed/download')) {
-            return this.processFeed(url);
+    async addProductFromUrl(input) {
+        const urls = input.split(/[\n\r\t]+/).map(u => u.trim()).filter(Boolean);
+        if (urls.length === 0)
+            return { message: 'No valid URLs provided' };
+        const results = [];
+        for (const url of urls) {
+            try {
+                if (url.includes('datafeed/download')) {
+                    const jobId = `feed-${Date.now()}`;
+                    this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting feed import...');
+                    this.processFeed(url, jobId).catch(e => {
+                        this.statusService.failJob(jobId, e.message);
+                    });
+                    results.push({ url, status: 'started', jobId });
+                }
+                else {
+                    const res = await this.scrapeSingleProduct(url);
+                    results.push({ url, status: 'success', data: res });
+                }
+            }
+            catch (error) {
+                this.logger.error(`Error processing URL ${url}: ${error.message}`);
+                results.push({ url, status: 'error', error: error.message });
+            }
         }
-        return this.scrapeSingleProduct(url);
+        return results.length === 1 ? results[0].data : { results };
     }
-    async processFeed(url) {
+    async processFeed(url, jobId) {
+        if (url.includes('datafeed/download') && !url.includes('/columns/')) {
+            if (!url.endsWith('/'))
+                url += '/';
+            url += 'columns/any/format/csv/compression/gzip/';
+        }
         this.logger.log(`Processing Awin Feed: ${url}`);
         try {
             const response = await (0, rxjs_1.firstValueFrom)(this.httpService.get(url, { responseType: 'stream' }));
             const stream = response.data;
+            const isGzip = url.includes('compression/gzip') ||
+                response.headers['content-encoding'] === 'gzip' ||
+                url.endsWith('.gz');
             let count = 0;
-            const parser = stream
-                .pipe(zlib.createGunzip())
-                .pipe(csv.parse({ headers: true }));
+            let parserStream = stream;
+            if (isGzip) {
+                parserStream = stream.pipe(zlib.createGunzip());
+            }
+            const parser = parserStream.pipe(csv.parse({ headers: true }));
             for await (const row of parser) {
                 try {
+                    if (!row.aw_product_id || !row.product_name) {
+                        this.logger.warn(`Skipping malformed row: Missing product ID or name`);
+                        continue;
+                    }
                     await this.prisma.product.upsert({
                         where: { awinId: row.aw_product_id },
                         update: {
@@ -133,7 +174,7 @@ let AwinService = AwinService_1 = class AwinService {
                             deliveryRestrictions: row.delivery_restrictions,
                             deliveryWeight: row.delivery_weight,
                             warranty: row.warranty,
-                            terms_of_contract: row.terms_of_contract,
+                            termsOfContract: row.terms_of_contract,
                             deliveryTime: row.delivery_time,
                             inStock: row.in_stock,
                             stockQuantity: parseInt(row.stock_quantity) || null,
@@ -221,7 +262,7 @@ let AwinService = AwinService_1 = class AwinService {
                             deliveryRestrictions: row.delivery_restrictions,
                             deliveryWeight: row.delivery_weight,
                             warranty: row.warranty,
-                            terms_of_contract: row.terms_of_contract,
+                            termsOfContract: row.terms_of_contract,
                             deliveryTime: row.delivery_time,
                             inStock: row.in_stock,
                             stockQuantity: parseInt(row.stock_quantity) || null,
@@ -263,8 +304,11 @@ let AwinService = AwinService_1 = class AwinService {
                         },
                     });
                     count++;
-                    if (count % 100 === 0) {
+                    if (count % 10 === 0) {
                         this.logger.log(`Imported ${count} products...`);
+                        if (jobId) {
+                            this.statusService.updateJob(jobId, count, `Imported ${count} products...`);
+                        }
                     }
                 }
                 catch (err) {
@@ -272,6 +316,9 @@ let AwinService = AwinService_1 = class AwinService {
                 }
             }
             this.logger.log(`Feed processing complete. Total imported: ${count}`);
+            if (jobId) {
+                this.statusService.completeJob(jobId, `Successfully imported ${count} products.`);
+            }
             return { message: 'Feed processed successfully', count };
         }
         catch (error) {
@@ -312,6 +359,7 @@ let AwinService = AwinService_1 = class AwinService {
                 $('meta[property="product:section"]').attr('content') ||
                 $('meta[name="category"]').attr('content') ||
                 'collection';
+            const safeCategory = (category || 'collection').toLowerCase().trim();
             const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
             const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
             const product = await this.prisma.product.upsert({
@@ -324,7 +372,7 @@ let AwinService = AwinService_1 = class AwinService {
                     currency,
                     imageUrl,
                     productUrl,
-                    category: category.toLowerCase().trim(),
+                    category: safeCategory,
                     merchant: this.extractMerchant(url),
                     merchantProductId: awinId,
                 },
@@ -370,6 +418,7 @@ exports.AwinService = AwinService;
 exports.AwinService = AwinService = AwinService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [axios_1.HttpService,
-        prisma_service_1.PrismaService])
+        prisma_service_1.PrismaService,
+        import_status_service_1.ImportStatusService])
 ], AwinService);
 //# sourceMappingURL=awin.service.js.map

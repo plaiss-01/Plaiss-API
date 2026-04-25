@@ -7,6 +7,8 @@ import * as csv from 'fast-csv';
 import * as zlib from 'zlib';
 import { Readable } from 'stream';
 
+import { ImportStatusService } from './import-status.service';
+
 @Injectable()
 export class AwinService {
   private readonly logger = new Logger(AwinService.name);
@@ -14,10 +16,13 @@ export class AwinService {
   constructor(
     private readonly httpService: HttpService,
     private readonly prisma: PrismaService,
+    private readonly statusService: ImportStatusService,
   ) {}
 
-  private slugify(text: string) {
+  private slugify(text: string | undefined | null) {
+    if (!text) return `product-${Date.now()}`;
     return text
+      .toString()
       .toLowerCase()
       .trim()
       .replace(/[^\w\s-]/g, '')
@@ -25,14 +30,46 @@ export class AwinService {
       .replace(/^-+|-+$/g, '');
   }
 
-  async addProductFromUrl(url: string) {
-    if (url.includes('datafeed/download')) {
-      return this.processFeed(url);
+  async addProductFromUrl(input: string) {
+    // Split by newlines, commas, or spaces to support bulk links
+    const urls = input.split(/[\n\r\t]+/).map(u => u.trim()).filter(Boolean);
+    
+    if (urls.length === 0) return { message: 'No valid URLs provided' };
+
+    const results: any[] = [];
+    for (const url of urls) {
+      try {
+        if (url.includes('datafeed/download')) {
+          const jobId = `feed-${Date.now()}`;
+          this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting feed import...');
+          
+          // We don't await here so the controller can return the jobId
+          this.processFeed(url, jobId).catch(e => {
+            this.statusService.failJob(jobId, e.message);
+          });
+          
+          results.push({ url, status: 'started', jobId });
+        } else {
+          const res = await this.scrapeSingleProduct(url);
+          results.push({ url, status: 'success', data: res });
+        }
+      } catch (error) {
+        this.logger.error(`Error processing URL ${url}: ${error.message}`);
+        results.push({ url, status: 'error', error: error.message });
+      }
     }
-    return this.scrapeSingleProduct(url);
+
+    return results.length === 1 ? results[0].data : { results };
   }
 
-  async processFeed(url: string) {
+
+  async processFeed(url: string, jobId?: string) {
+    // Ensure Awin URLs have necessary parameters to avoid 400 errors
+    if (url.includes('datafeed/download') && !url.includes('/columns/')) {
+      if (!url.endsWith('/')) url += '/';
+      url += 'columns/any/format/csv/compression/gzip/';
+    }
+
     this.logger.log(`Processing Awin Feed: ${url}`);
     
     try {
@@ -41,14 +78,26 @@ export class AwinService {
       );
       
       const stream = response.data as Readable;
+      const isGzip = url.includes('compression/gzip') || 
+                     response.headers['content-encoding'] === 'gzip' ||
+                     url.endsWith('.gz');
+
       let count = 0;
 
-      const parser = stream
-        .pipe(zlib.createGunzip())
-        .pipe(csv.parse({ headers: true }));
+      let parserStream: any = stream;
+      if (isGzip) {
+        parserStream = stream.pipe(zlib.createGunzip());
+      }
+
+      const parser = parserStream.pipe(csv.parse({ headers: true }));
+
 
       for await (const row of parser) {
         try {
+          if (!row.aw_product_id || !row.product_name) {
+            this.logger.warn(`Skipping malformed row: Missing product ID or name`);
+            continue;
+          }
           // Mapping Awin CSV columns to our schema
           await (this.prisma as any).product.upsert({
             where: { awinId: row.aw_product_id },
@@ -100,7 +149,7 @@ export class AwinService {
               deliveryRestrictions: row.delivery_restrictions,
               deliveryWeight: row.delivery_weight,
               warranty: row.warranty,
-              terms_of_contract: row.terms_of_contract,
+              termsOfContract: row.terms_of_contract,
               deliveryTime: row.delivery_time,
               inStock: row.in_stock,
               stockQuantity: parseInt(row.stock_quantity) || null,
@@ -189,7 +238,7 @@ export class AwinService {
               deliveryRestrictions: row.delivery_restrictions,
               deliveryWeight: row.delivery_weight,
               warranty: row.warranty,
-              terms_of_contract: row.terms_of_contract,
+              termsOfContract: row.terms_of_contract,
               deliveryTime: row.delivery_time,
               inStock: row.in_stock,
               stockQuantity: parseInt(row.stock_quantity) || null,
@@ -233,8 +282,12 @@ export class AwinService {
 
 
           count++;
-          if (count % 100 === 0) {
+          if (count % 10 === 0) {
             this.logger.log(`Imported ${count} products...`);
+            if (jobId) {
+              // We don't know the total for a stream, so we use a large number or just current
+              this.statusService.updateJob(jobId, count, `Imported ${count} products...`);
+            }
           }
         } catch (err) {
           this.logger.error(`Error saving product ${row.aw_product_id}: ${err.message}`);
@@ -242,6 +295,9 @@ export class AwinService {
       }
 
       this.logger.log(`Feed processing complete. Total imported: ${count}`);
+      if (jobId) {
+        this.statusService.completeJob(jobId, `Successfully imported ${count} products.`);
+      }
       return { message: 'Feed processed successfully', count };
     } catch (error) {
       this.logger.error(`Failed to process feed: ${error.message}`);
@@ -298,6 +354,8 @@ export class AwinService {
                        $('meta[name="category"]').attr('content') ||
                        'collection';
 
+      const safeCategory = (category || 'collection').toLowerCase().trim();
+
       // Try to get a unique Awin ID or similar from URL to prevent duplicates
       const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
       const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
@@ -312,7 +370,7 @@ export class AwinService {
           currency,
           imageUrl,
           productUrl,
-          category: category.toLowerCase().trim(),
+          category: safeCategory,
           merchant: this.extractMerchant(url),
           // New fields support for single product scraping
           merchantProductId: awinId, // Use awinId if specific merchant ID is not scraped

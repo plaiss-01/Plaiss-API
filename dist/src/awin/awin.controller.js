@@ -19,19 +19,25 @@ const awin_service_1 = require("./awin.service");
 const prisma_service_1 = require("../prisma.service");
 const create_product_dto_1 = require("./dto/create-product.dto");
 const update_product_dto_1 = require("./dto/update-product.dto");
+const import_status_service_1 = require("./import-status.service");
 let AwinController = class AwinController {
     awinService;
     prisma;
-    constructor(awinService, prisma) {
+    statusService;
+    constructor(awinService, prisma, statusService) {
         this.awinService = awinService;
         this.prisma = prisma;
+        this.statusService = statusService;
     }
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
     }
-    async getAllProducts(page = '1', limit = '1000', category) {
+    async getImportStatus(id) {
+        return this.statusService.getJob(id);
+    }
+    async getAllProducts(page = '1', limit = '50000', category) {
         const p = parseInt(page, 10) || 1;
-        const l = parseInt(limit, 10) || 1000;
+        const l = parseInt(limit, 10) || 50000;
         const skip = (p - 1) * l;
         const where = {};
         if (category && category !== 'all-products') {
@@ -207,6 +213,14 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "addProduct", null);
 __decorate([
+    (0, common_1.Get)('import-status/:id'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get the status of an import job' }),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "getImportStatus", null);
+__decorate([
     (0, common_1.Get)('products'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all saved products with pagination' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Return paginated products.' }),
@@ -265,6 +279,7 @@ exports.AwinController = AwinController = __decorate([
     (0, swagger_1.ApiTags)('awin'),
     (0, common_1.Controller)('awin'),
     __metadata("design:paramtypes", [awin_service_1.AwinService,
-        prisma_service_1.PrismaService])
+        prisma_service_1.PrismaService,
+        import_status_service_1.ImportStatusService])
 ], AwinController);
 //# sourceMappingURL=awin.controller.js.map

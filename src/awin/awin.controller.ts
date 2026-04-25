@@ -4,6 +4,7 @@ import { AwinService } from './awin.service';
 import { PrismaService } from '../prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { ImportStatusService } from './import-status.service';
 
 @ApiTags('awin')
 @Controller('awin')
@@ -11,6 +12,7 @@ export class AwinController {
   constructor(
     private readonly awinService: AwinService,
     private readonly prisma: PrismaService,
+    private readonly statusService: ImportStatusService,
   ) { }
 
   @Post('add-product')
@@ -20,16 +22,22 @@ export class AwinController {
     return this.awinService.addProductFromUrl(createProductDto.url);
   }
 
+  @Get('import-status/:id')
+  @ApiOperation({ summary: 'Get the status of an import job' })
+  async getImportStatus(@Param('id') id: string) {
+    return this.statusService.getJob(id);
+  }
+
   @Get('products')
   @ApiOperation({ summary: 'Get all saved products with pagination' })
   @ApiResponse({ status: 200, description: 'Return paginated products.' })
   async getAllProducts(
     @Query('page') page: string = '1',
-    @Query('limit') limit: string = '1000',
+    @Query('limit') limit: string = '50000',
     @Query('category') category?: string,
   ) {
     const p = parseInt(page, 10) || 1;
-    const l = parseInt(limit, 10) || 1000;
+    const l = parseInt(limit, 10) || 50000;
     const skip = (p - 1) * l;
 
     const where: any = {};
