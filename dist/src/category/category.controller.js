@@ -26,6 +26,9 @@ let CategoryController = class CategoryController {
     findAll() {
         return this.categoryService.findAll();
     }
+    findRoots() {
+        return this.categoryService.findRoots();
+    }
     syncAwin() {
         return this.categoryService.syncAwinCategories();
     }
@@ -56,6 +59,12 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "findAll", null);
+__decorate([
+    (0, common_1.Get)('roots'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], CategoryController.prototype, "findRoots", null);
 __decorate([
     (0, common_1.Post)('sync-awin'),
     __metadata("design:type", Function),

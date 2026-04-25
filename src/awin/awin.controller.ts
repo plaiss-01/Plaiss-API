@@ -11,7 +11,7 @@ export class AwinController {
   constructor(
     private readonly awinService: AwinService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   @Post('add-product')
   @ApiOperation({ summary: 'Add a new product using an Awin URL' })
@@ -25,18 +25,18 @@ export class AwinController {
   @ApiResponse({ status: 200, description: 'Return paginated products.' })
   async getAllProducts(
     @Query('page') page: string = '1',
-    @Query('limit') limit: string = '10',
+    @Query('limit') limit: string = '1000',
     @Query('category') category?: string,
   ) {
     const p = parseInt(page, 10) || 1;
-    const l = parseInt(limit, 10) || 10;
+    const l = parseInt(limit, 10) || 1000;
     const skip = (p - 1) * l;
 
     const where: any = {};
     if (category && category !== 'all-products') {
       // Find the category and all its children to include in the filter
       const currentCat = await (this.prisma as any).category.findFirst({
-        where: { 
+        where: {
           OR: [
             { name: { equals: category, mode: 'insensitive' } },
             { slug: { equals: category, mode: 'insensitive' } }
@@ -45,20 +45,58 @@ export class AwinController {
         include: { children: true }
       });
 
-      if (currentCat) {
-        const children = (currentCat as any).children || [];
-        const categoryNames = [currentCat.name, ...children.map((c: any) => c.name)];
-        where.OR = categoryNames.map(name => ({
-          category: {
-            contains: name,
-            mode: 'insensitive'
-          }
+      const ROOM_MAPPINGS: Record<string, string[]> = {
+        'Living Room': ['Tables', 'Chairs', 'Storage', 'Decorations', 'Lighting'],
+        'Bedroom': ['Beds', 'Mattresses', 'Storage'],
+        'Kitchen': ['Kitchen Units', 'Cookware & Utensils'],
+        'Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
+        'Garden & Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
+        'Kitchen & Dining': ['Kitchen Units', 'Tables', 'Chairs'],
+      };
+
+      if (ROOM_MAPPINGS[category]) {
+        where.OR = ROOM_MAPPINGS[category].map(name => ({
+          category: { contains: name, mode: 'insensitive' }
         }));
       } else {
-        where.category = {
-          contains: category,
-          mode: 'insensitive',
-        };
+        const currentCat = await (this.prisma as any).category.findFirst({
+          where: {
+            OR: [
+              { name: { equals: category, mode: 'insensitive' } },
+              { slug: { equals: category, mode: 'insensitive' } }
+            ]
+          },
+        });
+
+        if (currentCat) {
+          // Fetch all categories once to build a tree in memory
+          const allCats = await (this.prisma as any).category.findMany();
+          
+          const getDescendantNames = (catId: string): string[] => {
+            const cat = allCats.find((c: any) => c.id === catId);
+            if (!cat) return [];
+            
+            let names = [cat.name];
+            const children = allCats.filter((c: any) => c.parentId === catId);
+            children.forEach((child: any) => {
+              names = names.concat(getDescendantNames(child.id));
+            });
+            return names;
+          };
+
+          const categoryNames = getDescendantNames(currentCat.id);
+          where.OR = categoryNames.map(name => ({
+            category: {
+              contains: name,
+              mode: 'insensitive'
+            }
+          }));
+        } else {
+          where.category = {
+            contains: category,
+            mode: 'insensitive',
+          };
+        }
       }
     }
 
@@ -96,40 +134,76 @@ export class AwinController {
   }
 
   @Get('categories')
-  @ApiOperation({ summary: 'Get all unique product categories' })
+  @ApiOperation({ summary: 'Get all unique product categories with products' })
   async getCategories() {
-    const categories = await this.prisma.product.groupBy({
-      by: ['category'],
+    // 1. Get all categories
+    const allCategories = await (this.prisma as any).category.findMany({
+      include: {
+        children: {
+          include: {
+            children: true
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
     });
-    
-    // Normalize to lowercase and remove duplicates
-    const uniqueSlugs = new Set(
-      categories
-        .map(c => c.category?.toLowerCase().trim())
-        .filter(Boolean)
-    );
 
-    return Array.from(uniqueSlugs).map(slug => ({
-      slug,
-    }));
+    // 2. Get product counts from Product table
+    const counts = await this.prisma.product.groupBy({
+      by: ['category'],
+      _count: { _all: true }
+    });
+
+    const countMap: Record<string, number> = {};
+    counts.forEach(c => {
+      if (c.category) {
+        countMap[c.category.toLowerCase().trim()] = c._count._all;
+      }
+    });
+
+    // 3. Helper to calculate total count for a category and its descendants
+    const getDeepCount = (cat: any): number => {
+      let total = countMap[cat.name.toLowerCase().trim()] || 0;
+      if (cat.children) {
+        cat.children.forEach((child: any) => {
+          total += getDeepCount(child);
+        });
+      }
+      return total;
+    };
+
+    // 4. Filter categories that have at least one product
+    const roots = allCategories.filter((c: any) => !c.parentId);
+    const filteredRoots = roots.map((root: any) => {
+      const totalCount = getDeepCount(root);
+      if (totalCount > 0) {
+        return {
+          ...root,
+          productCount: totalCount
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    return filteredRoots;
   }
+
 
   @Get('products/by-slug/:slug')
   @ApiOperation({ summary: 'Get a product by slug' })
   @ApiResponse({ status: 200, description: 'Return the product.' })
   async getProductBySlug(@Param('slug') slug: string) {
-    // Note: Temporary fix for slow lookup and mismatching slug logic.
-    // Ideally we should use a 'slug' field in the DB.
-    const all = await this.prisma.product.findMany();
-    return all.find(p => {
-      const pSlug = p.name
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-      return pSlug === slug.toLowerCase();
+    console.log(`[AwinController] Fetching product by slug: ${slug}`);
+    const product = await this.prisma.product.findFirst({
+      where: { 
+        slug: { equals: slug, mode: 'insensitive' }
+      }
     });
+    console.log(`[AwinController] Found product: ${product ? product.name : 'NULL'}`);
+    return product;
   }
+
+
 
   @Get('products/:id')
   @ApiOperation({ summary: 'Get a product by ID' })

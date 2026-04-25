@@ -29,9 +29,9 @@ let AwinController = class AwinController {
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
     }
-    async getAllProducts(page = '1', limit = '10', category) {
+    async getAllProducts(page = '1', limit = '1000', category) {
         const p = parseInt(page, 10) || 1;
-        const l = parseInt(limit, 10) || 10;
+        const l = parseInt(limit, 10) || 1000;
         const skip = (p - 1) * l;
         const where = {};
         if (category && category !== 'all-products') {
@@ -44,21 +44,55 @@ let AwinController = class AwinController {
                 },
                 include: { children: true }
             });
-            if (currentCat) {
-                const children = currentCat.children || [];
-                const categoryNames = [currentCat.name, ...children.map((c) => c.name)];
-                where.OR = categoryNames.map(name => ({
-                    category: {
-                        contains: name,
-                        mode: 'insensitive'
-                    }
+            const ROOM_MAPPINGS = {
+                'Living Room': ['Tables', 'Chairs', 'Storage', 'Decorations', 'Lighting'],
+                'Bedroom': ['Beds', 'Mattresses', 'Storage'],
+                'Kitchen': ['Kitchen Units', 'Cookware & Utensils'],
+                'Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
+                'Garden & Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
+                'Kitchen & Dining': ['Kitchen Units', 'Tables', 'Chairs'],
+            };
+            if (ROOM_MAPPINGS[category]) {
+                where.OR = ROOM_MAPPINGS[category].map(name => ({
+                    category: { contains: name, mode: 'insensitive' }
                 }));
             }
             else {
-                where.category = {
-                    contains: category,
-                    mode: 'insensitive',
-                };
+                const currentCat = await this.prisma.category.findFirst({
+                    where: {
+                        OR: [
+                            { name: { equals: category, mode: 'insensitive' } },
+                            { slug: { equals: category, mode: 'insensitive' } }
+                        ]
+                    },
+                });
+                if (currentCat) {
+                    const allCats = await this.prisma.category.findMany();
+                    const getDescendantNames = (catId) => {
+                        const cat = allCats.find((c) => c.id === catId);
+                        if (!cat)
+                            return [];
+                        let names = [cat.name];
+                        const children = allCats.filter((c) => c.parentId === catId);
+                        children.forEach((child) => {
+                            names = names.concat(getDescendantNames(child.id));
+                        });
+                        return names;
+                    };
+                    const categoryNames = getDescendantNames(currentCat.id);
+                    where.OR = categoryNames.map(name => ({
+                        category: {
+                            contains: name,
+                            mode: 'insensitive'
+                        }
+                    }));
+                }
+                else {
+                    where.category = {
+                        contains: category,
+                        mode: 'insensitive',
+                    };
+                }
             }
         }
         const [data, total] = await Promise.all([
@@ -93,26 +127,57 @@ let AwinController = class AwinController {
         };
     }
     async getCategories() {
-        const categories = await this.prisma.product.groupBy({
-            by: ['category'],
+        const allCategories = await this.prisma.category.findMany({
+            include: {
+                children: {
+                    include: {
+                        children: true
+                    }
+                }
+            },
+            orderBy: { name: 'asc' }
         });
-        const uniqueSlugs = new Set(categories
-            .map(c => c.category?.toLowerCase().trim())
-            .filter(Boolean));
-        return Array.from(uniqueSlugs).map(slug => ({
-            slug,
-        }));
+        const counts = await this.prisma.product.groupBy({
+            by: ['category'],
+            _count: { _all: true }
+        });
+        const countMap = {};
+        counts.forEach(c => {
+            if (c.category) {
+                countMap[c.category.toLowerCase().trim()] = c._count._all;
+            }
+        });
+        const getDeepCount = (cat) => {
+            let total = countMap[cat.name.toLowerCase().trim()] || 0;
+            if (cat.children) {
+                cat.children.forEach((child) => {
+                    total += getDeepCount(child);
+                });
+            }
+            return total;
+        };
+        const roots = allCategories.filter((c) => !c.parentId);
+        const filteredRoots = roots.map((root) => {
+            const totalCount = getDeepCount(root);
+            if (totalCount > 0) {
+                return {
+                    ...root,
+                    productCount: totalCount
+                };
+            }
+            return null;
+        }).filter(Boolean);
+        return filteredRoots;
     }
     async getProductBySlug(slug) {
-        const all = await this.prisma.product.findMany();
-        return all.find(p => {
-            const pSlug = p.name
-                .toLowerCase()
-                .trim()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '');
-            return pSlug === slug.toLowerCase();
+        console.log(`[AwinController] Fetching product by slug: ${slug}`);
+        const product = await this.prisma.product.findFirst({
+            where: {
+                slug: { equals: slug, mode: 'insensitive' }
+            }
         });
+        console.log(`[AwinController] Found product: ${product ? product.name : 'NULL'}`);
+        return product;
     }
     async getProductById(id) {
         return this.prisma.product.findUnique({ where: { id } });
@@ -150,7 +215,7 @@ __decorate([
 ], AwinController.prototype, "getAllProducts", null);
 __decorate([
     (0, common_1.Get)('categories'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get all unique product categories' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all unique product categories with products' }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)

@@ -15,6 +15,7 @@ model Product {
   id          String   @id @default(uuid())
   awinId      String?  @unique
   name        String
+  slug        String?  @unique
   description String?
   price       Float?
   currency    String?
@@ -22,10 +23,89 @@ model Product {
   productUrl  String?
   merchant    String?
   category    String?
-  slug        String?  @unique
+  
+  // New Awin Fields
+  merchantProductId           String?
+  merchantCategory            String?
+  merchantId                  String?
+  categoryId                  String?
+  storePrice                  Float?
+  deliveryCost                Float?
+  merchantDeepLink            String?
+  language                    String?
+  lastUpdated                 String?
+  displayPrice                String?
+  dataFeedId                  String?
+  brandName                   String?
+  brandId                     String?
+  colour                      String?
+  productShortDescription     String?
+  specifications              String?
+  condition                   String?
+  productModel                String?
+  modelNumber                 String?
+  dimensions                  String?
+  keywords                    String?
+  promotionalText             String?
+  productType                 String?
+  commissionGroup             String?
+  merchantProductCategoryPath String?
+  merchantProductSecondCategory String?
+  merchantProductThirdCategory  String?
+  rrpPrice                    Float?
+  saving                      Float?
+  savingsPercent              String?
+  basePrice                   Float?
+  basePriceAmount             Float?
+  basePriceText               String?
+  productPriceOld             Float?
+  deliveryRestrictions        String?
+  deliveryWeight              String?
+  warranty                    String?
+  termsOfContract             String?
+  deliveryTime                String?
+  inStock                     String?
+  stockQuantity               Int?
+  validFrom                   String?
+  validTo                     String?
+  isForSale                   String?
+  webOffer                    String?
+  preOrder                    String?
+  stockStatus                 String?
+  sizeStockStatus             String?
+  sizeStockAmount             String?
+  merchantThumbUrl            String?
+  largeImage                  String?
+  alternateImage              String?
+  awThumbUrl                  String?
+  alternateImageTwo           String?
+  alternateImageThree         String?
+  alternateImageFour          String?
+  reviews                     String?
+  averageRating               String?
+  rating                      String?
+  numberAvailable             String?
+  custom1                     String?
+  custom2                     String?
+  custom3                     String?
+  custom4                     String?
+  custom5                     String?
+  custom6                     String?
+  custom7                     String?
+  custom8                     String?
+  custom9                     String?
+  ean                         String?
+  isbn                        String?
+  upc                         String?
+  mpn                         String?
+  parentProductId             String?
+  productGTIN                 String?
+  basketLink                  String?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
 
 model User {
   id        String   @id @default(uuid())

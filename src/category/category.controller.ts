@@ -22,6 +22,12 @@ export class CategoryController {
   findAll() {
     return this.categoryService.findAll();
   }
+  
+  @Get('roots')
+  findRoots() {
+    return this.categoryService.findRoots();
+  }
+
 
   @Post('sync-awin')
   syncAwin() {

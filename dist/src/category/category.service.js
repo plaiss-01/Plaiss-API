@@ -26,6 +26,32 @@ let CategoryService = class CategoryService {
             .replace(/^-+|-+$/g, '');
     }
     async create(data) {
+        const rawName = data.name;
+        const parts = rawName.split(/\s*[>|]\s*|\s*&gt;\s*/).map(p => p.trim()).filter(Boolean);
+        if (parts.length > 1) {
+            let currentParentId = data.parentId || null;
+            let lastCreated = null;
+            for (const part of parts) {
+                const slug = this.slugify(part);
+                let category = await this.prisma.category.findFirst({
+                    where: { OR: [{ slug }, { name: { equals: part, mode: 'insensitive' } }] }
+                });
+                if (!category) {
+                    category = await this.prisma.category.create({
+                        data: {
+                            name: part,
+                            slug,
+                            parentId: currentParentId,
+                            isAwin: data.isAwin || false,
+                        },
+                        include: { children: true, parent: true }
+                    });
+                }
+                currentParentId = category.id;
+                lastCreated = category;
+            }
+            return lastCreated;
+        }
         try {
             const slug = this.slugify(data.name);
             const createData = {
@@ -42,7 +68,6 @@ let CategoryService = class CategoryService {
             });
         }
         catch (error) {
-            console.error('Error creating category:', error);
             if (error.code === 'P2002') {
                 throw new common_1.ConflictException('Category with this name or slug already exists');
             }
@@ -53,6 +78,21 @@ let CategoryService = class CategoryService {
         return this.prisma.category.findMany({
             include: {
                 children: true,
+                parent: true,
+            },
+            orderBy: { name: 'asc' },
+        });
+    }
+    async findRoots() {
+        return this.prisma.category.findMany({
+            where: { parentId: null },
+            include: {
+                children: {
+                    include: {
+                        children: true,
+                        parent: true,
+                    },
+                },
                 parent: true,
             },
             orderBy: { name: 'asc' },

@@ -8,6 +8,7 @@ export declare class CategoryController {
         isAwin?: boolean;
     }): Promise<any>;
     findAll(): Promise<any>;
+    findRoots(): Promise<any>;
     syncAwin(): Promise<{
         message: string;
         newlyCreated: number;

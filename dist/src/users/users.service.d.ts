@@ -24,9 +24,9 @@ export declare class UsersService implements OnModuleInit {
     }>;
     registerDesigner(dto: any): Promise<{
         portfolio: {
-            url: string;
             id: string;
             createdAt: Date;
+            url: string;
             title: string | null;
             userId: string;
         }[];
@@ -65,9 +65,9 @@ export declare class UsersService implements OnModuleInit {
     getDesigners(): Promise<any>;
     getDesignerById(id: string): Promise<({
         portfolio: {
-            url: string;
             id: string;
             createdAt: Date;
+            url: string;
             title: string | null;
             userId: string;
         }[];

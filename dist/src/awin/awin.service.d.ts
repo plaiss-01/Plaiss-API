@@ -6,42 +6,12 @@ export declare class AwinService {
     private readonly logger;
     constructor(httpService: HttpService, prisma: PrismaService);
     private slugify;
-    addProductFromUrl(url: string): Promise<{
-        id: string;
-        awinId: string | null;
-        name: string;
-        description: string | null;
-        price: number | null;
-        currency: string | null;
-        imageUrl: string | null;
-        productUrl: string | null;
-        merchant: string | null;
-        category: string | null;
-        slug: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-    } | {
-        message: string;
-        count: number;
-    }>;
+    addProductFromUrl(url: string): Promise<any>;
     processFeed(url: string): Promise<{
         message: string;
         count: number;
     }>;
-    scrapeSingleProduct(url: string): Promise<{
-        id: string;
-        awinId: string | null;
-        name: string;
-        description: string | null;
-        price: number | null;
-        currency: string | null;
-        imageUrl: string | null;
-        productUrl: string | null;
-        merchant: string | null;
-        category: string | null;
-        slug: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-    }>;
+    scrapeSingleProduct(url: string): Promise<any>;
     private extractMerchant;
+    private extractLeafCategory;
 }

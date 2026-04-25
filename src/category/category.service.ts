@@ -15,10 +15,43 @@ export class CategoryService {
   }
 
   async create(data: { name: string; parentId?: string; isAwin?: boolean }) {
+    const rawName = data.name;
+    const parts = rawName.split(/\s*[>|]\s*|\s*&gt;\s*/).map(p => p.trim()).filter(Boolean);
+
+    if (parts.length > 1) {
+      let currentParentId = data.parentId || null;
+      let lastCreated: any = null;
+
+      for (const part of parts) {
+        const slug = this.slugify(part);
+        
+        // Find existing or create
+        let category = await (this.prisma as any).category.findFirst({
+          where: { OR: [{ slug }, { name: { equals: part, mode: 'insensitive' } }] }
+        });
+
+        if (!category) {
+          category = await (this.prisma as any).category.create({
+            data: {
+              name: part,
+              slug,
+              parentId: currentParentId,
+              isAwin: data.isAwin || false,
+            },
+            include: { children: true, parent: true }
+          });
+        }
+        
+        currentParentId = category.id;
+        lastCreated = category;
+      }
+      return lastCreated;
+    }
+
+    // Normal single category creation
     try {
       const slug = this.slugify(data.name);
       
-      // Ensure we don't pass an empty string as parentId
       const createData: any = {
         name: data.name,
         slug,
@@ -34,13 +67,13 @@ export class CategoryService {
         include: { children: true, parent: true },
       });
     } catch (error) {
-      console.error('Error creating category:', error);
       if (error.code === 'P2002') {
         throw new ConflictException('Category with this name or slug already exists');
       }
       throw error;
     }
   }
+
 
   async findAll() {
     return (this.prisma as any).category.findMany({
@@ -51,6 +84,24 @@ export class CategoryService {
       orderBy: { name: 'asc' },
     });
   }
+
+  async findRoots() {
+    return (this.prisma as any).category.findMany({
+      where: { parentId: null },
+      include: {
+        children: {
+          include: {
+            children: true,
+            parent: true,
+          },
+        },
+        parent: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+
 
   async findOne(id: string) {
     const category = await (this.prisma as any).category.findUnique({
