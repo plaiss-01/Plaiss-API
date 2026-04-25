@@ -43,9 +43,12 @@ let CategoryService = class CategoryService {
                             slug,
                             parentId: currentParentId,
                             isAwin: data.isAwin || false,
+                            isDeleted: false,
                         },
                         include: { children: true, parent: true }
                     });
+                }
+                else if (category.isDeleted) {
                 }
                 currentParentId = category.id;
                 lastCreated = category;
@@ -76,8 +79,11 @@ let CategoryService = class CategoryService {
     }
     async findAll() {
         return this.prisma.category.findMany({
+            where: { isDeleted: false },
             include: {
-                children: true,
+                children: {
+                    where: { isDeleted: false }
+                },
                 parent: true,
             },
             orderBy: { name: 'asc' },
@@ -85,11 +91,14 @@ let CategoryService = class CategoryService {
     }
     async findRoots() {
         return this.prisma.category.findMany({
-            where: { parentId: null },
+            where: { parentId: null, isDeleted: false },
             include: {
                 children: {
+                    where: { isDeleted: false },
                     include: {
-                        children: true,
+                        children: {
+                            where: { isDeleted: false }
+                        },
                         parent: true,
                     },
                 },
@@ -128,7 +137,10 @@ let CategoryService = class CategoryService {
         });
     }
     async remove(id) {
-        return this.prisma.category.delete({ where: { id } });
+        return this.prisma.category.update({
+            where: { id },
+            data: { isDeleted: true }
+        });
     }
     async syncAwinCategories() {
         const products = await this.prisma.product.findMany({
@@ -147,11 +159,11 @@ let CategoryService = class CategoryService {
             });
             if (!existing) {
                 const cat = await this.prisma.category.create({
-                    data: { name, slug, isAwin: true },
+                    data: { name, slug, isAwin: true, isDeleted: false },
                 });
                 created.push(cat);
             }
-            else {
+            else if (!existing.isDeleted) {
                 const updateData = { isAwin: true };
                 if (!existing.slug) {
                     updateData.slug = slug;

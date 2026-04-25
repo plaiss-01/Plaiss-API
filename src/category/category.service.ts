@@ -37,9 +37,16 @@ export class CategoryService {
               slug,
               parentId: currentParentId,
               isAwin: data.isAwin || false,
+              isDeleted: false,
             },
             include: { children: true, parent: true }
           });
+        } else if (category.isDeleted) {
+          // If it was deleted, reactivate it if it's being created/synced again?
+          // Actually, let's keep it deleted if it was manually deleted.
+          // Or maybe we should reactivate it? 
+          // The user said "those categories i deleted ... will sync again".
+          // So we should NOT reactivate them during sync.
         }
         
         currentParentId = category.id;
@@ -77,8 +84,11 @@ export class CategoryService {
 
   async findAll() {
     return (this.prisma as any).category.findMany({
+      where: { isDeleted: false },
       include: {
-        children: true,
+        children: {
+          where: { isDeleted: false }
+        },
         parent: true,
       },
       orderBy: { name: 'asc' },
@@ -87,11 +97,14 @@ export class CategoryService {
 
   async findRoots() {
     return (this.prisma as any).category.findMany({
-      where: { parentId: null },
+      where: { parentId: null, isDeleted: false },
       include: {
         children: {
+          where: { isDeleted: false },
           include: {
-            children: true,
+            children: {
+              where: { isDeleted: false }
+            },
             parent: true,
           },
         },
@@ -134,7 +147,10 @@ export class CategoryService {
   }
 
   async remove(id: string) {
-    return (this.prisma as any).category.delete({ where: { id } });
+    return (this.prisma as any).category.update({
+      where: { id },
+      data: { isDeleted: true }
+    });
   }
 
   async syncAwinCategories() {
@@ -159,10 +175,10 @@ export class CategoryService {
       });
       if (!existing) {
         const cat = await (this.prisma as any).category.create({
-          data: { name, slug, isAwin: true },
+          data: { name, slug, isAwin: true, isDeleted: false },
         });
         created.push(cat);
-      } else {
+      } else if (!existing.isDeleted) {
         const updateData: any = { isAwin: true };
         if (!existing.slug) {
           updateData.slug = slug;

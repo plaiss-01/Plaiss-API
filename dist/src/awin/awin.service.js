@@ -53,15 +53,18 @@ const csv = __importStar(require("fast-csv"));
 const zlib = __importStar(require("zlib"));
 const stream_1 = require("stream");
 const import_status_service_1 = require("./import-status.service");
+const category_service_1 = require("../category/category.service");
 let AwinService = AwinService_1 = class AwinService {
     httpService;
     prisma;
     statusService;
+    categoryService;
     logger = new common_1.Logger(AwinService_1.name);
-    constructor(httpService, prisma, statusService) {
+    constructor(httpService, prisma, statusService, categoryService) {
         this.httpService = httpService;
         this.prisma = prisma;
         this.statusService = statusService;
+        this.categoryService = categoryService;
     }
     slugify(text) {
         if (!text)
@@ -182,6 +185,9 @@ let AwinService = AwinService_1 = class AwinService {
         }
     }
     async upsertProduct(row) {
+        if (row.category_name) {
+            await this.categoryService.create({ name: row.category_name, isAwin: true }).catch(() => { });
+        }
         return this.prisma.product.upsert({
             where: { awinId: row.aw_product_id },
             update: {
@@ -397,6 +403,9 @@ let AwinService = AwinService_1 = class AwinService {
             const safeCategory = (category || 'collection').toLowerCase().trim();
             const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
             const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
+            if (safeCategory) {
+                await this.categoryService.create({ name: safeCategory, isAwin: true }).catch(() => { });
+            }
             const product = await this.prisma.product.upsert({
                 where: { awinId: awinId },
                 update: {
@@ -454,6 +463,7 @@ exports.AwinService = AwinService = AwinService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [axios_1.HttpService,
         prisma_service_1.PrismaService,
-        import_status_service_1.ImportStatusService])
+        import_status_service_1.ImportStatusService,
+        category_service_1.CategoryService])
 ], AwinService);
 //# sourceMappingURL=awin.service.js.map

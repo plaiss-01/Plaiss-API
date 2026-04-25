@@ -8,6 +8,8 @@ export declare class AwinController {
     private readonly prisma;
     private readonly statusService;
     constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService);
+    private categoriesCache;
+    private readonly CATEGORY_CACHE_TTL;
     addProduct(createProductDto: CreateProductDto): Promise<any>;
     uploadCsv(file: Express.Multer.File): Promise<{
         jobId: string;

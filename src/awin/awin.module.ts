@@ -5,8 +5,11 @@ import { AwinController } from './awin.controller';
 import { PrismaService } from '../prisma.service';
 import { ImportStatusService } from './import-status.service';
 
+import { CategoryModule } from '../category/category.module';
+import { CategoryService } from '../category/category.service';
+
 @Module({
-  imports: [HttpModule],
+  imports: [HttpModule, CategoryModule],
   controllers: [AwinController],
   providers: [AwinService, PrismaService, ImportStatusService],
   exports: [AwinService, ImportStatusService],

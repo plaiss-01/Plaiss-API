@@ -8,6 +8,7 @@ import * as zlib from 'zlib';
 import { Readable } from 'stream';
 
 import { ImportStatusService } from './import-status.service';
+import { CategoryService } from '../category/category.service';
 
 @Injectable()
 export class AwinService {
@@ -17,6 +18,7 @@ export class AwinService {
     private readonly httpService: HttpService,
     private readonly prisma: PrismaService,
     private readonly statusService: ImportStatusService,
+    private readonly categoryService: CategoryService,
   ) {}
 
   private slugify(text: string | undefined | null) {
@@ -156,6 +158,11 @@ export class AwinService {
   }
 
   private async upsertProduct(row: any) {
+    // Auto-sync category
+    if (row.category_name) {
+      await this.categoryService.create({ name: row.category_name, isAwin: true }).catch(() => {});
+    }
+
     // Mapping Awin CSV columns to our schema
     return (this.prisma as any).product.upsert({
       where: { awinId: row.aw_product_id },
@@ -393,6 +400,11 @@ export class AwinService {
       // Try to get a unique Awin ID or similar from URL to prevent duplicates
       const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
       const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
+
+      // Auto-sync category
+      if (safeCategory) {
+        await this.categoryService.create({ name: safeCategory, isAwin: true }).catch(() => {});
+      }
 
       const product = await (this.prisma as any).product.upsert({
         where: { awinId: awinId },
