@@ -156,8 +156,12 @@ let AwinController = class AwinController {
             }
             return total;
         };
+        const EXCLUDED_CATEGORIES = ['pet', 'skin', 'beauty', 'health', 'fragrance', 'jewelry'];
         const roots = allCategories.filter((c) => !c.parentId);
         const filteredRoots = roots.map((root) => {
+            const name = (root.name || '').toLowerCase();
+            if (EXCLUDED_CATEGORIES.some(ex => name.includes(ex)))
+                return null;
             const totalCount = getDeepCount(root);
             if (totalCount > 0) {
                 return {
