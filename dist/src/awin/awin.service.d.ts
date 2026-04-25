@@ -13,6 +13,10 @@ export declare class AwinService {
         message: string;
         count: number;
     }>;
+    processCsvFile(fileBuffer: Buffer, jobId: string): Promise<{
+        count: number;
+    }>;
+    private upsertProduct;
     scrapeSingleProduct(url: string): Promise<any>;
     private extractMerchant;
     private extractLeafCategory;

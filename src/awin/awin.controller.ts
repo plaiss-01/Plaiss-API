@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AwinService } from './awin.service';
 import { PrismaService } from '../prisma.service';
@@ -20,6 +21,21 @@ export class AwinController {
   @ApiResponse({ status: 201, description: 'The product has been successfully created.' })
   async addProduct(@Body() createProductDto: CreateProductDto) {
     return this.awinService.addProductFromUrl(createProductDto.url);
+  }
+  
+  @Post('upload-csv')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Upload a CSV file of products' })
+  async uploadCsv(@UploadedFile() file: Express.Multer.File) {
+    const jobId = `csv-${Date.now()}`;
+    this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting CSV file import...');
+    
+    // Process in background
+    this.awinService.processCsvFile(file.buffer, jobId).catch(e => {
+      this.statusService.failJob(jobId, e.message);
+    });
+
+    return { jobId, message: 'CSV import started' };
   }
 
   @Get('import-status/:id')

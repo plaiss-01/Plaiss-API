@@ -9,6 +9,10 @@ export declare class AwinController {
     private readonly statusService;
     constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService);
     addProduct(createProductDto: CreateProductDto): Promise<any>;
+    uploadCsv(file: Express.Multer.File): Promise<{
+        jobId: string;
+        message: string;
+    }>;
     getImportStatus(id: string): Promise<{
         current: number;
         total: number;

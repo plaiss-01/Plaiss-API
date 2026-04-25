@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AwinController = void 0;
 const common_1 = require("@nestjs/common");
+const platform_express_1 = require("@nestjs/platform-express");
 const swagger_1 = require("@nestjs/swagger");
 const awin_service_1 = require("./awin.service");
 const prisma_service_1 = require("../prisma.service");
@@ -31,6 +32,14 @@ let AwinController = class AwinController {
     }
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
+    }
+    async uploadCsv(file) {
+        const jobId = `csv-${Date.now()}`;
+        this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting CSV file import...');
+        this.awinService.processCsvFile(file.buffer, jobId).catch(e => {
+            this.statusService.failJob(jobId, e.message);
+        });
+        return { jobId, message: 'CSV import started' };
     }
     async getImportStatus(id) {
         return this.statusService.getJob(id);
@@ -212,6 +221,15 @@ __decorate([
     __metadata("design:paramtypes", [create_product_dto_1.CreateProductDto]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "addProduct", null);
+__decorate([
+    (0, common_1.Post)('upload-csv'),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),
+    (0, swagger_1.ApiOperation)({ summary: 'Upload a CSV file of products' }),
+    __param(0, (0, common_1.UploadedFile)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "uploadCsv", null);
 __decorate([
     (0, common_1.Get)('import-status/:id'),
     (0, swagger_1.ApiOperation)({ summary: 'Get the status of an import job' }),
