@@ -160,6 +160,7 @@ let AwinController = class AwinController {
         }
         else {
             allCategories = await this.prisma.category.findMany({
+                where: { isDeleted: false },
                 orderBy: { name: 'asc' }
             });
             this.flatCategoriesCache = { data: allCategories, timestamp: now };

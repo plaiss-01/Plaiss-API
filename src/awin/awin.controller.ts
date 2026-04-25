@@ -177,6 +177,7 @@ export class AwinController {
       allCategories = this.flatCategoriesCache.data;
     } else {
       allCategories = await (this.prisma as any).category.findMany({
+        where: { isDeleted: false },
         orderBy: { name: 'asc' }
       });
       this.flatCategoriesCache = { data: allCategories, timestamp: now };
