@@ -8,6 +8,8 @@ export declare class AwinController {
     private readonly prisma;
     private readonly statusService;
     constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService);
+    private flatCategoriesCache;
+    private readonly CACHE_TTL;
     addProduct(createProductDto: CreateProductDto): Promise<any>;
     uploadCsv(file: Express.Multer.File): Promise<{
         jobId: string;
@@ -39,7 +41,7 @@ export declare class AwinController {
             totalPages: number;
         };
     }>;
-    getCategories(): Promise<any>;
+    getCategories(): Promise<any[]>;
     getProductBySlug(slug: string): Promise<{
         id: string;
         awinId: string | null;

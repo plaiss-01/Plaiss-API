@@ -16,6 +16,9 @@ export class AwinController {
     private readonly statusService: ImportStatusService,
   ) { }
 
+  private flatCategoriesCache: { data: any[], timestamp: number } | null = null;
+  private readonly CACHE_TTL = 60000; // 1 minute
+
   @Post('add-product')
   @ApiOperation({ summary: 'Add a new product using an Awin URL' })
   @ApiResponse({ status: 201, description: 'The product has been successfully created.' })
@@ -58,16 +61,6 @@ export class AwinController {
 
     const where: any = {};
     if (category && category !== 'all-products') {
-      const currentCat = await (this.prisma as any).category.findFirst({
-        where: {
-          OR: [
-            { name: { equals: category, mode: 'insensitive' } },
-            { slug: { equals: category, mode: 'insensitive' } }
-          ]
-        },
-        include: { children: true }
-      });
-
       const ROOM_MAPPINGS: Record<string, string[]> = {
         'Living Room': ['Tables', 'Chairs', 'Storage', 'Decorations', 'Lighting'],
         'Bedroom': ['Beds', 'Mattresses', 'Storage'],
@@ -92,18 +85,37 @@ export class AwinController {
         });
 
         if (currentCat) {
-          const allCats = await (this.prisma as any).category.findMany();
+          let allCats: any[];
+          const now = Date.now();
+          if (this.flatCategoriesCache && (now - this.flatCategoriesCache.timestamp < this.CACHE_TTL)) {
+            allCats = this.flatCategoriesCache.data;
+          } else {
+            allCats = await (this.prisma as any).category.findMany();
+            this.flatCategoriesCache = { data: allCats, timestamp: now };
+          }
           
-          const getDescendantNames = (catId: string): string[] => {
-            const cat = allCats.find((c: any) => c.id === catId);
+          // Optimized lookup maps
+          const categoryMap = new Map<string, any>();
+          const childrenMap = new Map<string, any[]>();
+          allCats.forEach(cat => {
+            categoryMap.set(cat.id, cat);
+            if (cat.parentId) {
+              const children = childrenMap.get(cat.parentId) || [];
+              children.push(cat);
+              childrenMap.set(cat.parentId, children);
+            }
+          });
+
+          const getDescendantNames = (catId: string, visited = new Set<string>()): string[] => {
+            if (visited.has(catId)) return [];
+            visited.add(catId);
+            
+            const cat = categoryMap.get(catId);
             if (!cat) return [];
             
-            let names = [cat.name];
-            const children = allCats.filter((c: any) => c.parentId === catId);
-            children.forEach((child: any) => {
-              names = names.concat(getDescendantNames(child.id));
-            });
-            return names;
+            const names = [cat.name];
+            const children = childrenMap.get(catId) || [];
+            return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
           };
 
           const categoryNames = getDescendantNames(currentCat.id);
@@ -158,15 +170,28 @@ export class AwinController {
   @Get('categories')
   @ApiOperation({ summary: 'Get all unique product categories with products' })
   async getCategories() {
-    const allCategories = await (this.prisma as any).category.findMany({
-      include: {
-        children: {
-          include: {
-            children: true
-          }
-        }
-      },
-      orderBy: { name: 'asc' }
+    // 1. Get all categories flat
+    let allCategories: any[];
+    const now = Date.now();
+    if (this.flatCategoriesCache && (now - this.flatCategoriesCache.timestamp < this.CACHE_TTL)) {
+      allCategories = this.flatCategoriesCache.data;
+    } else {
+      allCategories = await (this.prisma as any).category.findMany({
+        orderBy: { name: 'asc' }
+      });
+      this.flatCategoriesCache = { data: allCategories, timestamp: now };
+    }
+
+    // 2. Create optimized lookup maps
+    const categoryMap = new Map<string, any>();
+    const childrenMap = new Map<string, any[]>();
+    allCategories.forEach(cat => {
+      categoryMap.set(cat.id, cat);
+      if (cat.parentId) {
+        const children = childrenMap.get(cat.parentId) || [];
+        children.push(cat);
+        childrenMap.set(cat.parentId, children);
+      }
     });
 
     const counts = await this.prisma.product.groupBy({
@@ -181,13 +206,22 @@ export class AwinController {
       }
     });
 
-    const getDeepCount = (cat: any): number => {
+    const memo = new Map<string, number>();
+    const getDeepCount = (catId: string, visited = new Set<string>()): number => {
+      if (visited.has(catId)) return 0;
+      if (memo.has(catId)) return memo.get(catId)!;
+      visited.add(catId);
+
+      const cat = categoryMap.get(catId);
+      if (!cat) return 0;
+
       let total = countMap[cat.name.toLowerCase().trim()] || 0;
-      if (cat.children) {
-        cat.children.forEach((child: any) => {
-          total += getDeepCount(child);
-        });
-      }
+      const children = childrenMap.get(catId) || [];
+      children.forEach((child: any) => {
+        total += getDeepCount(child.id, visited);
+      });
+      
+      memo.set(catId, total);
       return total;
     };
 
@@ -198,11 +232,16 @@ export class AwinController {
       const name = (root.name || '').toLowerCase();
       if (EXCLUDED_CATEGORIES.some(ex => name.includes(ex))) return null;
 
-      const totalCount = getDeepCount(root);
+      const totalCount = getDeepCount(root.id);
       if (totalCount > 0) {
+        const children = childrenMap.get(root.id) || [];
         return {
           ...root,
-          productCount: totalCount
+          productCount: totalCount,
+          children: children.map(child => ({
+            ...child,
+            productCount: getDeepCount(child.id)
+          })).filter(c => c.productCount > 0)
         };
       }
       return null;
