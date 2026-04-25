@@ -11,7 +11,7 @@ import { CategoryService } from '../category/category.service';
 @Module({
   imports: [HttpModule, CategoryModule],
   controllers: [AwinController],
-  providers: [AwinService, PrismaService, ImportStatusService],
+  providers: [AwinService, ImportStatusService],
   exports: [AwinService, ImportStatusService],
 })
 export class AwinModule {}

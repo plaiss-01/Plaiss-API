@@ -30,8 +30,6 @@ let AwinController = class AwinController {
         this.prisma = prisma;
         this.statusService = statusService;
     }
-    categoriesCache = null;
-    CATEGORY_CACHE_TTL = 60000;
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
     }
@@ -46,9 +44,9 @@ let AwinController = class AwinController {
     async getImportStatus(id) {
         return this.statusService.getJob(id);
     }
-    async getAllProducts(page = '1', limit = '5000', category) {
+    async getAllProducts(page = '1', limit = '50000', category) {
         const p = parseInt(page, 10) || 1;
-        const l = parseInt(limit, 10) || 5000;
+        const l = parseInt(limit, 10) || 50000;
         const skip = (p - 1) * l;
         const where = {};
         if (category && category !== 'all-products') {
@@ -84,35 +82,17 @@ let AwinController = class AwinController {
                     },
                 });
                 if (currentCat) {
-                    let allCats;
-                    const now = Date.now();
-                    if (this.categoriesCache && (now - this.categoriesCache.timestamp < this.CATEGORY_CACHE_TTL)) {
-                        allCats = this.categoriesCache.data;
-                    }
-                    else {
-                        allCats = await this.prisma.category.findMany();
-                        this.categoriesCache = { data: allCats, timestamp: now };
-                    }
-                    const categoryMap = new Map();
-                    const childrenMap = new Map();
-                    allCats.forEach(cat => {
-                        categoryMap.set(cat.id, cat);
-                        if (cat.parentId) {
-                            const children = childrenMap.get(cat.parentId) || [];
-                            children.push(cat);
-                            childrenMap.set(cat.parentId, children);
-                        }
-                    });
-                    const getDescendantNames = (catId, visited = new Set()) => {
-                        if (visited.has(catId))
-                            return [];
-                        visited.add(catId);
-                        const cat = categoryMap.get(catId);
+                    const allCats = await this.prisma.category.findMany();
+                    const getDescendantNames = (catId) => {
+                        const cat = allCats.find((c) => c.id === catId);
                         if (!cat)
                             return [];
-                        const names = [cat.name];
-                        const children = childrenMap.get(catId) || [];
-                        return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
+                        let names = [cat.name];
+                        const children = allCats.filter((c) => c.parentId === catId);
+                        children.forEach((child) => {
+                            names = names.concat(getDescendantNames(child.id));
+                        });
+                        return names;
                     };
                     const categoryNames = getDescendantNames(currentCat.id);
                     where.OR = categoryNames.map(name => ({
@@ -163,17 +143,14 @@ let AwinController = class AwinController {
     }
     async getCategories() {
         const allCategories = await this.prisma.category.findMany({
+            include: {
+                children: {
+                    include: {
+                        children: true
+                    }
+                }
+            },
             orderBy: { name: 'asc' }
-        });
-        const categoryMap = new Map();
-        const childrenMap = new Map();
-        allCategories.forEach(cat => {
-            categoryMap.set(cat.id, cat);
-            if (cat.parentId) {
-                const children = childrenMap.get(cat.parentId) || [];
-                children.push(cat);
-                childrenMap.set(cat.parentId, children);
-            }
         });
         const counts = await this.prisma.product.groupBy({
             by: ['category'],
@@ -185,40 +162,26 @@ let AwinController = class AwinController {
                 countMap[c.category.toLowerCase().trim()] = c._count._all;
             }
         });
-        const memo = new Map();
-        const getDeepCount = (catId, visited = new Set()) => {
-            if (visited.has(catId))
-                return 0;
-            if (memo.has(catId))
-                return memo.get(catId);
-            visited.add(catId);
-            const cat = categoryMap.get(catId);
-            if (!cat)
-                return 0;
+        const getDeepCount = (cat) => {
             let total = countMap[cat.name.toLowerCase().trim()] || 0;
-            const children = childrenMap.get(catId) || [];
-            children.forEach((child) => {
-                total += getDeepCount(child.id, visited);
-            });
-            memo.set(catId, total);
+            if (cat.children) {
+                cat.children.forEach((child) => {
+                    total += getDeepCount(child);
+                });
+            }
             return total;
         };
-        const roots = allCategories.filter((c) => !c.parentId);
         const EXCLUDED_CATEGORIES = ['pet', 'skin', 'beauty', 'health', 'fragrance', 'jewelry'];
+        const roots = allCategories.filter((c) => !c.parentId);
         const filteredRoots = roots.map((root) => {
             const name = (root.name || '').toLowerCase();
             if (EXCLUDED_CATEGORIES.some(ex => name.includes(ex)))
                 return null;
-            const totalCount = getDeepCount(root.id);
+            const totalCount = getDeepCount(root);
             if (totalCount > 0) {
-                const children = childrenMap.get(root.id) || [];
                 return {
                     ...root,
-                    productCount: totalCount,
-                    children: children.map(child => ({
-                        ...child,
-                        productCount: getDeepCount(child.id)
-                    })).filter(c => c.productCount > 0)
+                    productCount: totalCount
                 };
             }
             return null;
@@ -226,13 +189,11 @@ let AwinController = class AwinController {
         return filteredRoots;
     }
     async getProductBySlug(slug) {
-        console.log(`[AwinController] Fetching product by slug: ${slug}`);
         const product = await this.prisma.product.findFirst({
             where: {
                 slug: { equals: slug, mode: 'insensitive' }
             }
         });
-        console.log(`[AwinController] Found product: ${product ? product.name : 'NULL'}`);
         return product;
     }
     async getProductById(id) {

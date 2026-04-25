@@ -7,10 +7,12 @@ import { ConfigModule } from '@nestjs/config';
 import { UploadModule } from './upload/upload.module';
 import { CategoryModule } from './category/category.module';
 import { HealthController } from './health.controller';
+import { PrismaModule } from './prisma.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
     AwinModule, 
     UsersModule,
     UploadModule,
