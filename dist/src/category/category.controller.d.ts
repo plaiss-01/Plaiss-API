@@ -7,7 +7,8 @@ export declare class CategoryController {
         parentId?: string;
         isAwin?: boolean;
     }): Promise<any>;
-    findAll(): Promise<any>;
+    findAll(includeDeleted?: string): Promise<any>;
+    restore(id: string): Promise<any>;
     findRoots(): Promise<any>;
     syncAwin(): Promise<{
         message: string;

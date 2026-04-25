@@ -77,12 +77,16 @@ let CategoryService = class CategoryService {
             throw error;
         }
     }
-    async findAll() {
+    async findAll(includeDeleted = false) {
+        const where = {};
+        if (!includeDeleted) {
+            where.isDeleted = false;
+        }
         return this.prisma.category.findMany({
-            where: { isDeleted: false },
+            where,
             include: {
                 children: {
-                    where: { isDeleted: false }
+                    where: includeDeleted ? {} : { isDeleted: false }
                 },
                 parent: true,
             },
@@ -140,6 +144,12 @@ let CategoryService = class CategoryService {
         return this.prisma.category.update({
             where: { id },
             data: { isDeleted: true }
+        });
+    }
+    async restore(id) {
+        return this.prisma.category.update({
+            where: { id },
+            data: { isDeleted: false }
         });
     }
     async syncAwinCategories() {

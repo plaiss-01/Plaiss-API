@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
 
@@ -19,8 +20,13 @@ export class CategoryController {
   }
 
   @Get()
-  findAll() {
-    return this.categoryService.findAll();
+  findAll(@Query('includeDeleted') includeDeleted?: string) {
+    return this.categoryService.findAll(includeDeleted === 'true');
+  }
+
+  @Patch(':id/restore')
+  restore(@Param('id') id: string) {
+    return this.categoryService.restore(id);
   }
   
   @Get('roots')

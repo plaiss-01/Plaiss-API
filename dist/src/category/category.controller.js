@@ -23,8 +23,11 @@ let CategoryController = class CategoryController {
     create(data) {
         return this.categoryService.create(data);
     }
-    findAll() {
-        return this.categoryService.findAll();
+    findAll(includeDeleted) {
+        return this.categoryService.findAll(includeDeleted === 'true');
+    }
+    restore(id) {
+        return this.categoryService.restore(id);
     }
     findRoots() {
         return this.categoryService.findRoots();
@@ -55,10 +58,18 @@ __decorate([
 ], CategoryController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
+    __param(0, (0, common_1.Query)('includeDeleted')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "findAll", null);
+__decorate([
+    (0, common_1.Patch)(':id/restore'),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], CategoryController.prototype, "restore", null);
 __decorate([
     (0, common_1.Get)('roots'),
     __metadata("design:type", Function),

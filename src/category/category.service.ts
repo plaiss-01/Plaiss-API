@@ -82,12 +82,17 @@ export class CategoryService {
   }
 
 
-  async findAll() {
+  async findAll(includeDeleted = false) {
+    const where: any = {};
+    if (!includeDeleted) {
+      where.isDeleted = false;
+    }
+    
     return (this.prisma as any).category.findMany({
-      where: { isDeleted: false },
+      where,
       include: {
         children: {
-          where: { isDeleted: false }
+          where: includeDeleted ? {} : { isDeleted: false }
         },
         parent: true,
       },
@@ -150,6 +155,13 @@ export class CategoryService {
     return (this.prisma as any).category.update({
       where: { id },
       data: { isDeleted: true }
+    });
+  }
+
+  async restore(id: string) {
+    return (this.prisma as any).category.update({
+      where: { id },
+      data: { isDeleted: false }
     });
   }
 

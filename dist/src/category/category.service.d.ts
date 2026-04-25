@@ -8,7 +8,7 @@ export declare class CategoryService {
         parentId?: string;
         isAwin?: boolean;
     }): Promise<any>;
-    findAll(): Promise<any>;
+    findAll(includeDeleted?: boolean): Promise<any>;
     findRoots(): Promise<any>;
     findOne(id: string): Promise<any>;
     findBySlug(slug: string): Promise<any>;
@@ -17,6 +17,7 @@ export declare class CategoryService {
         parentId?: string | null;
     }): Promise<any>;
     remove(id: string): Promise<any>;
+    restore(id: string): Promise<any>;
     syncAwinCategories(): Promise<{
         message: string;
         newlyCreated: number;
