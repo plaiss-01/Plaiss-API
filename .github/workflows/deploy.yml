@@ -39,6 +39,18 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
 
+      - name: Sync environment variables to Kubernetes
+        run: |
+          kubectl create secret generic plaiss-api-secret \
+            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=PORT="${{ secrets.PORT }}" \
+            --from-literal=S3_REGION="${{ secrets.S3_REGION }}" \
+            --from-literal=S3_BUCKET="${{ secrets.S3_BUCKET }}" \
+            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.S3_ACCESS_KEY_ID }}" \
+            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.S3_SECRET_ACCESS_KEY }}" \
+            --namespace=dev \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Deploy to EKS
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -46,4 +58,12 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl set image deployment/plaiss-api plaiss-api=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -n dev
-          kubectl rollout status deployment/plaiss-api -n dev
+          kubectl rollout status deployment/plaiss-api -n dev --timeout=120s
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed - rolling back to previous version"
+          kubectl rollout undo deployment/plaiss-api -n dev
+          kubectl rollout status deployment/plaiss-api -n dev --timeout=60s
+          echo "Rollback complete"
