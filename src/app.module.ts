@@ -8,6 +8,8 @@ import { UploadModule } from './upload/upload.module';
 import { CategoryModule } from './category/category.module';
 import { HealthController } from './health.controller';
 import { PrismaModule } from './prisma.module';
+import { BlogModule } from './blog/blog.module';
+
 
 @Module({
   imports: [
@@ -16,7 +18,8 @@ import { PrismaModule } from './prisma.module';
     AwinModule, 
     UsersModule,
     UploadModule,
-    CategoryModule
+    CategoryModule,
+    BlogModule
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

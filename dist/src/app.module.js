@@ -17,6 +17,7 @@ const upload_module_1 = require("./upload/upload.module");
 const category_module_1 = require("./category/category.module");
 const health_controller_1 = require("./health.controller");
 const prisma_module_1 = require("./prisma.module");
+const blog_module_1 = require("./blog/blog.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -28,7 +29,8 @@ exports.AppModule = AppModule = __decorate([
             awin_module_1.AwinModule,
             users_module_1.UsersModule,
             upload_module_1.UploadModule,
-            category_module_1.CategoryModule
+            category_module_1.CategoryModule,
+            blog_module_1.BlogModule
         ],
         controllers: [app_controller_1.AppController, health_controller_1.HealthController],
         providers: [app_service_1.AppService],
