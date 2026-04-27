@@ -41,11 +41,12 @@ jobs:
 
       - name: Sync environment variables to Kubernetes
         run: |
-          kubectl create secret generic plaiss-api-secret \
+          kubectl create secret generic plaiss-api-secrets \
             --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
             --from-literal=PORT="${{ secrets.PORT }}" \
             --from-literal=S3_REGION="${{ secrets.S3_REGION }}" \
             --from-literal=S3_BUCKET="${{ secrets.S3_BUCKET }}" \
+            --from-literal=REKOGNITION_REGION="${{ secrets.REKOGNITION_REGION }}" \
             --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.S3_ACCESS_KEY_ID }}" \
             --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.S3_SECRET_ACCESS_KEY }}" \
             --namespace=dev \
