@@ -49,7 +49,7 @@ let AwinController = class AwinController {
     async getImportStatus(id) {
         return this.statusService.getJob(id);
     }
-    async getAllProducts(page = '1', limit = '50000', category) {
+    async getAllProducts(page = '1', limit = '50', category) {
         const p = parseInt(page, 10) || 1;
         const l = parseInt(limit, 10) || 50000;
         const skip = (p - 1) * l;
@@ -71,57 +71,49 @@ let AwinController = class AwinController {
                 'Garden & Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
                 'Kitchen & Dining': ['Kitchen Units', 'Tables', 'Chairs'],
             };
-            if (ROOM_MAPPINGS[category]) {
+            const currentCat = await this.prisma.category.findFirst({
+                where: {
+                    OR: [
+                        { name: { equals: category, mode: 'insensitive' } },
+                        { slug: { equals: category, mode: 'insensitive' } }
+                    ]
+                },
+            });
+            if (currentCat) {
+                const allCats = await this.categoryService.findAll();
+                const categoryMap = new Map();
+                const childrenMap = new Map();
+                allCats.forEach(cat => {
+                    categoryMap.set(cat.id, cat);
+                    if (cat.parentId) {
+                        const children = childrenMap.get(cat.parentId) || [];
+                        children.push(cat);
+                        childrenMap.set(cat.parentId, children);
+                    }
+                });
+                const getDescendantNames = (catId, visited = new Set()) => {
+                    if (visited.has(catId))
+                        return [];
+                    visited.add(catId);
+                    const cat = categoryMap.get(catId);
+                    if (!cat)
+                        return [];
+                    const names = [cat.name];
+                    const children = childrenMap.get(catId) || [];
+                    return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
+                };
+                const categoryNames = getDescendantNames(currentCat.id);
+                where.OR = categoryNames.map(name => ({
+                    category: { contains: name, mode: 'insensitive' }
+                }));
+            }
+            else if (ROOM_MAPPINGS[category]) {
                 where.OR = ROOM_MAPPINGS[category].map(name => ({
                     category: { contains: name, mode: 'insensitive' }
                 }));
             }
             else {
-                const currentCat = await this.prisma.category.findFirst({
-                    where: {
-                        OR: [
-                            { name: { equals: category, mode: 'insensitive' } },
-                            { slug: { equals: category, mode: 'insensitive' } }
-                        ]
-                    },
-                });
-                if (currentCat) {
-                    const allCats = await this.categoryService.findAll();
-                    const categoryMap = new Map();
-                    const childrenMap = new Map();
-                    allCats.forEach(cat => {
-                        categoryMap.set(cat.id, cat);
-                        if (cat.parentId) {
-                            const children = childrenMap.get(cat.parentId) || [];
-                            children.push(cat);
-                            childrenMap.set(cat.parentId, children);
-                        }
-                    });
-                    const getDescendantNames = (catId, visited = new Set()) => {
-                        if (visited.has(catId))
-                            return [];
-                        visited.add(catId);
-                        const cat = categoryMap.get(catId);
-                        if (!cat)
-                            return [];
-                        const names = [cat.name];
-                        const children = childrenMap.get(catId) || [];
-                        return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
-                    };
-                    const categoryNames = getDescendantNames(currentCat.id);
-                    where.OR = categoryNames.map(name => ({
-                        category: {
-                            contains: name,
-                            mode: 'insensitive'
-                        }
-                    }));
-                }
-                else {
-                    where.category = {
-                        contains: category,
-                        mode: 'insensitive',
-                    };
-                }
+                where.category = { contains: category, mode: 'insensitive' };
             }
         }
         const [data, total] = await Promise.all([
@@ -135,6 +127,8 @@ let AwinController = class AwinController {
                     name: true,
                     price: true,
                     imageUrl: true,
+                    awThumbUrl: true,
+                    largeImage: true,
                     category: true,
                     slug: true,
                     merchant: true,
@@ -145,8 +139,17 @@ let AwinController = class AwinController {
             }),
             this.prisma.product.count({ where }),
         ]);
+        const products = data.map((p) => {
+            const img = p.imageUrl || p.largeImage || p.awThumbUrl || '';
+            return {
+                ...p,
+                imageUrl: img,
+                image: img,
+                images: img ? [img] : [],
+            };
+        });
         const result = {
-            data,
+            data: products,
             meta: {
                 total,
                 page: p,

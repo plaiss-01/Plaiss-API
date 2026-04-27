@@ -54,7 +54,7 @@ export class AwinController {
   @ApiResponse({ status: 200, description: 'Return paginated products.' })
   async getAllProducts(
     @Query('page') page: string = '1',
-    @Query('limit') limit: string = '50000',
+    @Query('limit') limit: string = '50',
     @Query('category') category?: string,
   ) {
     const p = parseInt(page, 10) || 1;
@@ -81,60 +81,53 @@ export class AwinController {
         'Kitchen & Dining': ['Kitchen Units', 'Tables', 'Chairs'],
       };
 
-      if (ROOM_MAPPINGS[category]) {
+      // 1. Try to find the category in the database first
+      const currentCat = await (this.prisma as any).category.findFirst({
+        where: {
+          OR: [
+            { name: { equals: category, mode: 'insensitive' } },
+            { slug: { equals: category, mode: 'insensitive' } }
+          ]
+        },
+      });
+
+      if (currentCat) {
+        const allCats = await this.categoryService.findAll();
+        const categoryMap = new Map<string, any>();
+        const childrenMap = new Map<string, any[]>();
+        allCats.forEach(cat => {
+          categoryMap.set(cat.id, cat);
+          if (cat.parentId) {
+            const children = childrenMap.get(cat.parentId) || [];
+            children.push(cat);
+            childrenMap.set(cat.parentId, children);
+          }
+        });
+
+        const getDescendantNames = (catId: string, visited = new Set<string>()): string[] => {
+          if (visited.has(catId)) return [];
+          visited.add(catId);
+          const cat = categoryMap.get(catId);
+          if (!cat) return [];
+          const names = [cat.name];
+          const children = childrenMap.get(catId) || [];
+          return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
+        };
+
+        const categoryNames = getDescendantNames(currentCat.id);
+        where.OR = categoryNames.map(name => ({
+          category: { contains: name, mode: 'insensitive' }
+        }));
+      } 
+      // 2. Fallback to ROOM_MAPPINGS if not found in DB
+      else if (ROOM_MAPPINGS[category]) {
         where.OR = ROOM_MAPPINGS[category].map(name => ({
           category: { contains: name, mode: 'insensitive' }
         }));
-      } else {
-        const currentCat = await (this.prisma as any).category.findFirst({
-          where: {
-            OR: [
-              { name: { equals: category, mode: 'insensitive' } },
-              { slug: { equals: category, mode: 'insensitive' } }
-            ]
-          },
-        });
-
-        if (currentCat) {
-          const allCats = await this.categoryService.findAll();
-          
-          // Optimized lookup maps
-          const categoryMap = new Map<string, any>();
-          const childrenMap = new Map<string, any[]>();
-          allCats.forEach(cat => {
-            categoryMap.set(cat.id, cat);
-            if (cat.parentId) {
-              const children = childrenMap.get(cat.parentId) || [];
-              children.push(cat);
-              childrenMap.set(cat.parentId, children);
-            }
-          });
-
-          const getDescendantNames = (catId: string, visited = new Set<string>()): string[] => {
-            if (visited.has(catId)) return [];
-            visited.add(catId);
-            
-            const cat = categoryMap.get(catId);
-            if (!cat) return [];
-            
-            const names = [cat.name];
-            const children = childrenMap.get(catId) || [];
-            return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
-          };
-
-          const categoryNames = getDescendantNames(currentCat.id);
-          where.OR = categoryNames.map(name => ({
-            category: {
-              contains: name,
-              mode: 'insensitive'
-            }
-          }));
-        } else {
-          where.category = {
-            contains: category,
-            mode: 'insensitive',
-          };
-        }
+      }
+      // 3. Fallback to direct name match if nothing else works
+      else {
+        where.category = { contains: category, mode: 'insensitive' };
       }
     }
 
@@ -149,6 +142,8 @@ export class AwinController {
           name: true,
           price: true,
           imageUrl: true,
+          awThumbUrl: true,
+          largeImage: true,
           category: true,
           slug: true,
           merchant: true,
@@ -160,8 +155,19 @@ export class AwinController {
       this.prisma.product.count({ where }),
     ]);
 
+    const products = data.map((p: any) => {
+      const img = p.imageUrl || p.largeImage || p.awThumbUrl || '';
+      return {
+        ...p,
+        imageUrl: img,
+        // Ensure frontend gets 'image' or 'images' if it expects them
+        image: img,
+        images: img ? [img] : [],
+      };
+    });
+
     const result = {
-      data,
+      data: products,
       meta: {
         total,
         page: p,

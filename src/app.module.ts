@@ -9,6 +9,7 @@ import { CategoryModule } from './category/category.module';
 import { HealthController } from './health.controller';
 import { PrismaModule } from './prisma.module';
 import { BlogModule } from './blog/blog.module';
+import { VisualSearchModule } from './visual-search/visual-search.module';
 
 
 @Module({
@@ -19,7 +20,8 @@ import { BlogModule } from './blog/blog.module';
     UsersModule,
     UploadModule,
     CategoryModule,
-    BlogModule
+    BlogModule,
+    VisualSearchModule
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
