@@ -23,7 +23,7 @@ export declare class AwinController {
         status: string;
         message: string;
     } | undefined>;
-    getAllProducts(page?: string, limit?: string, category?: string): Promise<any>;
+    getAllProducts(page?: string, limit?: string, category?: string, subs?: string): Promise<any>;
     getCategories(): Promise<any>;
     getProductBySlug(slug: string): Promise<{
         id: string;

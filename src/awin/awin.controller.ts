@@ -27,14 +27,14 @@ export class AwinController {
   async addProduct(@Body() createProductDto: CreateProductDto) {
     return this.awinService.addProductFromUrl(createProductDto.url);
   }
-  
+
   @Post('upload-csv')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload a CSV file of products' })
   async uploadCsv(@UploadedFile() file: Express.Multer.File) {
     const jobId = `csv-${Date.now()}`;
     this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting CSV file import...');
-    
+
     // Process in background
     this.awinService.processCsvFile(file.buffer, jobId).catch(e => {
       this.statusService.failJob(jobId, e.message);
@@ -56,6 +56,7 @@ export class AwinController {
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '50',
     @Query('category') category?: string,
+    @Query('subs') subs?: string,
   ) {
     const p = parseInt(page, 10) || 1;
     const l = parseInt(limit, 10) || 50000;
@@ -72,21 +73,14 @@ export class AwinController {
 
     const where: any = {};
     if (category && category !== 'all-products') {
-      const ROOM_MAPPINGS: Record<string, string[]> = {
-        'Living Room': ['Tables', 'Chairs', 'Storage', 'Decorations', 'Lighting'],
-        'Bedroom': ['Beds', 'Mattresses', 'Storage'],
-        'Kitchen': ['Kitchen Units', 'Cookware & Utensils'],
-        'Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
-        'Garden & Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
-        'Kitchen & Dining': ['Kitchen Units', 'Tables', 'Chairs'],
-      };
+      let categoryNames = [category];
 
-      // 1. Try to find the category in the database first
+      // 1. Try to find the category in the database first (more permissive search)
       const currentCat = await (this.prisma as any).category.findFirst({
         where: {
           OR: [
-            { name: { equals: category, mode: 'insensitive' } },
-            { slug: { equals: category, mode: 'insensitive' } }
+            { name: { contains: category, mode: 'insensitive' } },
+            { slug: { contains: category, mode: 'insensitive' } }
           ]
         },
       });
@@ -114,21 +108,31 @@ export class AwinController {
           return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
         };
 
-        const categoryNames = getDescendantNames(currentCat.id);
-        where.OR = categoryNames.map(name => ({
-          category: { contains: name, mode: 'insensitive' }
-        }));
-      } 
-      // 2. Fallback to ROOM_MAPPINGS if not found in DB
-      else if (ROOM_MAPPINGS[category]) {
-        where.OR = ROOM_MAPPINGS[category].map(name => ({
-          category: { contains: name, mode: 'insensitive' }
-        }));
+        categoryNames = getDescendantNames(currentCat.id);
       }
-      // 3. Fallback to direct name match if nothing else works
-      else {
-        where.category = { contains: category, mode: 'insensitive' };
+
+      // 2. Merge with subcategories passed from frontend (primary source of truth)
+      if (subs) {
+        const subArray = subs.split(',').map(s => s.trim());
+        categoryNames = Array.from(new Set([...categoryNames, ...subArray]));
       }
+
+      // 3. Search across multiple fields for all discovered names
+      const keywords = new Set<string>();
+      const EXCLUDED = new Set(['and', 'or', 'of', 'for', 'with', 'the', 'a', '&', 'in', 'on', 'at']);
+      
+      categoryNames.forEach(name => {
+        keywords.add(name);
+        // Split by common delimiters but keep the original name too
+        const parts = name.split(/[\s&]| and | or /).map(p => p.trim()).filter(p => p.length > 2 && !EXCLUDED.has(p.toLowerCase()));
+        parts.forEach(p => keywords.add(p));
+      });
+
+      where.OR = Array.from(keywords).flatMap(name => [
+        { category: { contains: name, mode: 'insensitive' } },
+        { merchantCategory: { contains: name, mode: 'insensitive' } },
+        { merchantProductCategoryPath: { contains: name, mode: 'insensitive' } }
+      ]);
     }
 
     const [data, total] = await Promise.all([
@@ -217,13 +221,14 @@ export class AwinController {
 
       const cat = categoryMap.get(catId);
       if (!cat) return 0;
+      const catName = cat.name.toLowerCase().trim();
+      let total = countMap[catName] || 0;
 
-      let total = countMap[cat.name.toLowerCase().trim()] || 0;
       const children = childrenMap.get(catId) || [];
       children.forEach((child: any) => {
         total += getDeepCount(child.id, visited);
       });
-      
+
       memo.set(catId, total);
       return total;
     };
@@ -244,7 +249,7 @@ export class AwinController {
           children: children.map(child => ({
             ...child,
             productCount: getDeepCount(child.id)
-          })).filter(c => c.productCount > 0)
+          }))
         };
       }
       return null;
@@ -258,7 +263,7 @@ export class AwinController {
   @ApiResponse({ status: 200, description: 'Return the product.' })
   async getProductBySlug(@Param('slug') slug: string) {
     const product = await this.prisma.product.findFirst({
-      where: { 
+      where: {
         slug: { equals: slug, mode: 'insensitive' }
       }
     });

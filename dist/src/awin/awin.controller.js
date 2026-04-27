@@ -49,7 +49,7 @@ let AwinController = class AwinController {
     async getImportStatus(id) {
         return this.statusService.getJob(id);
     }
-    async getAllProducts(page = '1', limit = '50', category) {
+    async getAllProducts(page = '1', limit = '50', category, subs) {
         const p = parseInt(page, 10) || 1;
         const l = parseInt(limit, 10) || 50000;
         const skip = (p - 1) * l;
@@ -63,19 +63,12 @@ let AwinController = class AwinController {
         }
         const where = {};
         if (category && category !== 'all-products') {
-            const ROOM_MAPPINGS = {
-                'Living Room': ['Tables', 'Chairs', 'Storage', 'Decorations', 'Lighting'],
-                'Bedroom': ['Beds', 'Mattresses', 'Storage'],
-                'Kitchen': ['Kitchen Units', 'Cookware & Utensils'],
-                'Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
-                'Garden & Outdoor': ['Sheds & Garden Furniture', 'Plants & Seeds'],
-                'Kitchen & Dining': ['Kitchen Units', 'Tables', 'Chairs'],
-            };
+            let categoryNames = [category];
             const currentCat = await this.prisma.category.findFirst({
                 where: {
                     OR: [
-                        { name: { equals: category, mode: 'insensitive' } },
-                        { slug: { equals: category, mode: 'insensitive' } }
+                        { name: { contains: category, mode: 'insensitive' } },
+                        { slug: { contains: category, mode: 'insensitive' } }
                     ]
                 },
             });
@@ -102,19 +95,24 @@ let AwinController = class AwinController {
                     const children = childrenMap.get(catId) || [];
                     return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
                 };
-                const categoryNames = getDescendantNames(currentCat.id);
-                where.OR = categoryNames.map(name => ({
-                    category: { contains: name, mode: 'insensitive' }
-                }));
+                categoryNames = getDescendantNames(currentCat.id);
             }
-            else if (ROOM_MAPPINGS[category]) {
-                where.OR = ROOM_MAPPINGS[category].map(name => ({
-                    category: { contains: name, mode: 'insensitive' }
-                }));
+            if (subs) {
+                const subArray = subs.split(',').map(s => s.trim());
+                categoryNames = Array.from(new Set([...categoryNames, ...subArray]));
             }
-            else {
-                where.category = { contains: category, mode: 'insensitive' };
-            }
+            const keywords = new Set();
+            const EXCLUDED = new Set(['and', 'or', 'of', 'for', 'with', 'the', 'a', '&', 'in', 'on', 'at']);
+            categoryNames.forEach(name => {
+                keywords.add(name);
+                const parts = name.split(/[\s&]| and | or /).map(p => p.trim()).filter(p => p.length > 2 && !EXCLUDED.has(p.toLowerCase()));
+                parts.forEach(p => keywords.add(p));
+            });
+            where.OR = Array.from(keywords).flatMap(name => [
+                { category: { contains: name, mode: 'insensitive' } },
+                { merchantCategory: { contains: name, mode: 'insensitive' } },
+                { merchantProductCategoryPath: { contains: name, mode: 'insensitive' } }
+            ]);
         }
         const [data, total] = await Promise.all([
             this.prisma.product.findMany({
@@ -192,7 +190,8 @@ let AwinController = class AwinController {
             const cat = categoryMap.get(catId);
             if (!cat)
                 return 0;
-            let total = countMap[cat.name.toLowerCase().trim()] || 0;
+            const catName = cat.name.toLowerCase().trim();
+            let total = countMap[catName] || 0;
             const children = childrenMap.get(catId) || [];
             children.forEach((child) => {
                 total += getDeepCount(child.id, visited);
@@ -215,7 +214,7 @@ let AwinController = class AwinController {
                     children: children.map(child => ({
                         ...child,
                         productCount: getDeepCount(child.id)
-                    })).filter(c => c.productCount > 0)
+                    }))
                 };
             }
             return null;
@@ -277,8 +276,9 @@ __decorate([
     __param(0, (0, common_1.Query)('page')),
     __param(1, (0, common_1.Query)('limit')),
     __param(2, (0, common_1.Query)('category')),
+    __param(3, (0, common_1.Query)('subs')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
 __decorate([
