@@ -32,6 +32,9 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const adapter_pg_1 = require("@prisma/adapter-pg");
@@ -40,6 +43,7 @@ const csv = __importStar(require("fast-csv"));
 const zlib = __importStar(require("zlib"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const axios_1 = __importDefault(require("axios"));
 const envPath = path.resolve(__dirname, '../.env');
 const envContent = fs.readFileSync(envPath, 'utf8');
 const env = {};
@@ -66,13 +70,61 @@ function slugify(text) {
         .replace(/[\s_-]+/g, '-')
         .replace(/^-+|-+$/g, '');
 }
+async function getOrCreateCategory(pathString, categoryCache, prisma) {
+    if (!pathString || pathString.trim() === '')
+        return null;
+    const parts = pathString.split('>').map(p => p.trim()).filter(Boolean);
+    if (parts.length === 0)
+        return null;
+    let parentId = null;
+    let currentSlugPath = '';
+    for (const part of parts) {
+        const slug = slugify(part);
+        const fullSlug = currentSlugPath ? `${currentSlugPath}-${slug}` : slug;
+        if (categoryCache.has(fullSlug)) {
+            parentId = categoryCache.get(fullSlug);
+        }
+        else {
+            let category = await prisma.category.findFirst({
+                where: { OR: [{ slug: fullSlug }, { name: part }] }
+            });
+            if (!category) {
+                category = await prisma.category.create({
+                    data: {
+                        name: part,
+                        slug: fullSlug,
+                        parentId,
+                        isAwin: true,
+                    }
+                });
+            }
+            else if (!category.isAwin || category.parentId !== parentId) {
+                category = await prisma.category.update({
+                    where: { id: category.id },
+                    data: {
+                        isAwin: true,
+                        parentId: category.parentId || parentId
+                    }
+                });
+            }
+            categoryCache.set(fullSlug, category.id);
+            parentId = category.id;
+        }
+        currentSlugPath = fullSlug;
+    }
+    return parentId;
+}
 async function main() {
-    const url = 'https://productdata.awin.com/datafeed/download/apikey/c2c3e805ebd99d73d9a8eb334715631e/language/en/cid/473/fid/80153/rid/0/hasEnhancedFeeds/0/columns/aw_deep_link,product_name,aw_product_id,merchant_product_id,merchant_image_url,description,merchant_category,search_price,merchant_name,merchant_id,category_name,category_id,aw_image_url,currency,store_price,delivery_cost,merchant_deep_link,language,last_updated,display_price,data_feed_id,brand_name,brand_id,colour,product_short_description,specifications,condition,product_model,model_number,dimensions,keywords,promotional_text,product_type,commission_group,merchant_product_category_path,merchant_product_second_category,merchant_product_third_category,rrp_price,saving,savings_percent,base_price,base_price_amount,base_price_text,product_price_old,delivery_restrictions,delivery_weight,warranty,terms_of_contract,delivery_time,in_stock,stock_quantity,valid_from,valid_to,is_for_sale,web_offer,pre_order,stock_status,size_stock_status,size_stock_amount,merchant_thumb_url,large_image,alternate_image,aw_thumb_url,alternate_image_two,alternate_image_three,alternate_image_four,reviews,average_rating,rating,number_available,custom_1,custom_2,custom_3,custom_4,custom_5,custom_6,custom_7,custom_8,custom_9,ean,isbn,upc,mpn,parent_product_id,product_GTIN,basket_link/format/csv/delimiter/%2C/compression/gzip/';
-    console.log('Clearing existing products for full update...');
-    await prisma.product.deleteMany({});
-    console.log(`Processing Awin Feed (Full Mapping): ${url}`);
-    const axios = require('axios');
-    const response = await axios.get(url, { responseType: 'stream' });
+    const url = 'https://productdata.awin.com/datafeed/download/apikey/c2c3e805ebd99d73d9a8eb334715631e/language/en/cid/422,433,530,434,436,532,424,451,448,453,449,452,450,425,455,457,459,460,456,458,426,616,463,464,465,466,427,625,597,473,469,617,470,430,481,615,483,484,485,488,529,596/fid/17007/rid/0/hasEnhancedFeeds/0/columns/aw_deep_link,product_name,aw_product_id,merchant_product_id,merchant_image_url,description,merchant_category,search_price,merchant_name,merchant_id,category_name,category_id,aw_image_url,currency,store_price,delivery_cost,merchant_deep_link,language,last_updated,display_price,data_feed_id,brand_name,brand_id,colour,product_short_description,specifications,condition,product_model,model_number,dimensions,keywords,promotional_text,product_type,commission_group,merchant_product_category_path,merchant_product_second_category,merchant_product_third_category,rrp_price,saving,savings_percent,base_price,base_price_amount,base_price_text,product_price_old,delivery_restrictions,delivery_weight,warranty,terms_of_contract,delivery_time,in_stock,stock_quantity,valid_from,valid_to,is_for_sale,web_offer,pre_order,stock_status,size_stock_status,size_stock_amount,merchant_thumb_url,large_image,alternate_image,aw_thumb_url,alternate_image_two,alternate_image_three,alternate_image_four,reviews,average_rating,rating,number_available,custom_1,custom_2,custom_3,custom_4,custom_5,custom_6,custom_7,custom_8,custom_9,ean,isbn,upc,mpn,parent_product_id,product_GTIN,basket_link/format/csv/delimiter/%2C/compression/gzip/';
+    console.log('Updating products (creating new ones and updating categories for existing)...');
+    console.log('Pre-loading categories...');
+    const existingCategories = await prisma.category.findMany();
+    const categoryCache = new Map();
+    for (const cat of existingCategories) {
+        categoryCache.set(cat.slug, cat.id);
+    }
+    console.log(`Processing Awin Feed: ${url}`);
+    const response = await axios_1.default.get(url, { responseType: 'stream' });
     const stream = response.data;
     let batch = [];
     let totalImported = 0;
@@ -85,10 +137,15 @@ async function main() {
         }
         const price = parseFloat(row.search_price) || 0;
         const name = row.product_name || 'Unknown Product';
+        let categoryString = row.product_type;
+        if (!categoryString || categoryString.trim() === '') {
+            categoryString = row.merchant_category;
+        }
+        const mappedCategoryId = await getOrCreateCategory(categoryString, categoryCache, prisma);
         batch.push({
             awinId: row.aw_product_id,
             name: name,
-            slug: slugify(name),
+            slug: slugify(name) + '-' + row.aw_product_id,
             description: row.description,
             price: price,
             currency: row.currency,
@@ -99,7 +156,7 @@ async function main() {
             merchantProductId: row.merchant_product_id,
             merchantCategory: row.merchant_category,
             merchantId: row.merchant_id,
-            categoryId: row.category_id,
+            categoryId: mappedCategoryId || row.category_id,
             storePrice: parseFloat(row.store_price) || null,
             deliveryCost: parseFloat(row.delivery_cost) || null,
             merchantDeepLink: row.merchant_deep_link,
@@ -173,14 +230,21 @@ async function main() {
             productGTIN: row.product_GTIN,
             basketLink: row.basket_link,
         });
-        if (batch.length >= 1000) {
+        if (batch.length >= 200) {
             try {
-                const result = await prisma.product.createMany({
-                    data: batch,
-                    skipDuplicates: true,
-                });
-                totalImported += result.count;
-                console.log(`Imported batch of ${result.count} (Total: ${totalImported})...`);
+                const operations = batch.map(item => prisma.product.upsert({
+                    where: { awinId: item.awinId },
+                    update: {
+                        categoryId: item.categoryId,
+                        category: item.category,
+                        productType: item.productType,
+                        colour: item.colour,
+                    },
+                    create: item
+                }));
+                await Promise.all(operations);
+                totalImported += batch.length;
+                console.log(`Upserted batch of ${batch.length} (Total: ${totalImported})...`);
                 batch = [];
             }
             catch (err) {
@@ -191,11 +255,18 @@ async function main() {
     }
     if (batch.length > 0) {
         try {
-            const result = await prisma.product.createMany({
-                data: batch,
-                skipDuplicates: true,
-            });
-            totalImported += result.count;
+            const operations = batch.map(item => prisma.product.upsert({
+                where: { awinId: item.awinId },
+                update: {
+                    categoryId: item.categoryId,
+                    category: item.category,
+                    productType: item.productType,
+                    colour: item.colour,
+                },
+                create: item
+            }));
+            await Promise.all(operations);
+            totalImported += batch.length;
         }
         catch (err) {
             console.error(`Error saving final batch: ${err.message}`);

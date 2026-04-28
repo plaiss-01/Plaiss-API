@@ -154,6 +154,7 @@ export class AwinController {
           productUrl: true,
           description: true,
           createdAt: true,
+          colour: true,
         },
       }),
       this.prisma.product.count({ where }),
@@ -167,6 +168,7 @@ export class AwinController {
         // Ensure frontend gets 'image' or 'images' if it expects them
         image: img,
         images: img ? [img] : [],
+        colors: p.colour ? [{ name: p.colour, hex: p.colour }] : [],
       };
     });
 

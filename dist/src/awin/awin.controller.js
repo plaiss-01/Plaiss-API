@@ -133,6 +133,7 @@ let AwinController = class AwinController {
                     productUrl: true,
                     description: true,
                     createdAt: true,
+                    colour: true,
                 },
             }),
             this.prisma.product.count({ where }),
@@ -144,6 +145,7 @@ let AwinController = class AwinController {
                 imageUrl: img,
                 image: img,
                 images: img ? [img] : [],
+                colors: p.colour ? [{ name: p.colour, hex: p.colour }] : [],
             };
         });
         const result = {
