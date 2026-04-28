@@ -76,7 +76,7 @@ export class AwinController {
       let categoryNames = [category];
 
       // 1. Try to find the category in the database first (more permissive search)
-      const currentCat = await (this.prisma as any).category.findFirst({
+      const currentCat = await this.prisma.category.findFirst({
         where: {
           OR: [
             { name: { contains: category, mode: 'insensitive' } },

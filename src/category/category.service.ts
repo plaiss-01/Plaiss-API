@@ -119,7 +119,7 @@ export class CategoryService {
 
   async findRoots() {
     return (this.prisma as any).category.findMany({
-      where: { parentId: null, isDeleted: false },
+      where: { parentId: null, isDeleted: false, isAwin: false },
       include: {
         children: {
           where: { isDeleted: false },
