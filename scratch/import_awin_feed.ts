@@ -230,6 +230,7 @@ async function main() {
               category: item.category,
               productType: item.productType,
               colour: item.colour,
+              merchantCategory: item.merchantCategory,
             },
             create: item
           })
@@ -255,6 +256,7 @@ async function main() {
             category: item.category,
             productType: item.productType,
             colour: item.colour,
+            merchantCategory: item.merchantCategory,
           },
           create: item
         })

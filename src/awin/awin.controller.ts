@@ -155,6 +155,8 @@ export class AwinController {
           description: true,
           createdAt: true,
           colour: true,
+          merchantCategory: true,
+          productType: true,
         },
       }),
       this.prisma.product.count({ where }),
