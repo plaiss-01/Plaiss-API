@@ -29,16 +29,16 @@ export declare class AwinController {
     getCategories(): Promise<any>;
     getProductBySlug(slug: string): Promise<{
         id: string;
-        description: string | null;
-        category: string | null;
         awinId: string | null;
         name: string;
         slug: string | null;
+        description: string | null;
         price: number | null;
         currency: string | null;
         imageUrl: string | null;
         productUrl: string | null;
         merchant: string | null;
+        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         merchantId: string | null;
@@ -120,16 +120,16 @@ export declare class AwinController {
     } | null>;
     getProductById(id: string): Promise<{
         id: string;
-        description: string | null;
-        category: string | null;
         awinId: string | null;
         name: string;
         slug: string | null;
+        description: string | null;
         price: number | null;
         currency: string | null;
         imageUrl: string | null;
         productUrl: string | null;
         merchant: string | null;
+        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         merchantId: string | null;
@@ -211,16 +211,16 @@ export declare class AwinController {
     } | null>;
     updateProduct(id: string, updateProductDto: UpdateProductDto): Promise<{
         id: string;
-        description: string | null;
-        category: string | null;
         awinId: string | null;
         name: string;
         slug: string | null;
+        description: string | null;
         price: number | null;
         currency: string | null;
         imageUrl: string | null;
         productUrl: string | null;
         merchant: string | null;
+        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         merchantId: string | null;
@@ -302,16 +302,16 @@ export declare class AwinController {
     }>;
     deleteProduct(id: string): Promise<{
         id: string;
-        description: string | null;
-        category: string | null;
         awinId: string | null;
         name: string;
         slug: string | null;
+        description: string | null;
         price: number | null;
         currency: string | null;
         imageUrl: string | null;
         productUrl: string | null;
         merchant: string | null;
+        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         merchantId: string | null;
