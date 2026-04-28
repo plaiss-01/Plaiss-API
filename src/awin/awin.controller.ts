@@ -20,6 +20,7 @@ export class AwinController {
 
   private productsCache = new Map<string, { data: any, timestamp: number }>();
   private readonly CACHE_TTL = 60000; // 1 minute
+  private readonly MAX_CACHE_SIZE = 20; // Maximum number of cached queries
 
   @Post('add-product')
   @ApiOperation({ summary: 'Add a new product using an Awin URL' })
@@ -59,7 +60,8 @@ export class AwinController {
     @Query('subs') subs?: string,
   ) {
     const p = parseInt(page, 10) || 1;
-    const l = parseInt(limit, 10) || 50000;
+    let l = parseInt(limit, 10) || 50;
+    if (l > 1000) l = 1000; // Cap limit to prevent memory issues
     const skip = (p - 1) * l;
 
     const cacheKey = `products-${p}-${l}-${category || 'all'}`;
@@ -184,7 +186,23 @@ export class AwinController {
       },
     };
 
+    // Evict oldest entries if cache is full
+    if (this.productsCache.size >= this.MAX_CACHE_SIZE) {
+      const oldestKey = this.productsCache.keys().next().value;
+      if (oldestKey) this.productsCache.delete(oldestKey);
+    }
+    
     this.productsCache.set(cacheKey, { data: result, timestamp: now });
+    
+    // Periodically cleanup expired entries (roughly 1 in 10 requests)
+    if (Math.random() < 0.1) {
+      for (const [key, value] of this.productsCache.entries()) {
+        if (now - value.timestamp > this.CACHE_TTL) {
+          this.productsCache.delete(key);
+        }
+      }
+    }
+    
     return result;
   }
 

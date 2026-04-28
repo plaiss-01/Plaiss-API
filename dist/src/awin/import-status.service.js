@@ -10,8 +10,16 @@ exports.ImportStatusService = void 0;
 const common_1 = require("@nestjs/common");
 let ImportStatusService = class ImportStatusService {
     jobs = new Map();
+    MAX_JOB_AGE = 3600000;
+    MAX_JOBS = 100;
     setJob(id, current, total, status = 'processing', message = '') {
-        this.jobs.set(id, { current, total, status, message });
+        this.cleanup();
+        if (this.jobs.size >= this.MAX_JOBS) {
+            const oldestKey = this.jobs.keys().next().value;
+            if (oldestKey)
+                this.jobs.delete(oldestKey);
+        }
+        this.jobs.set(id, { current, total, status, message, timestamp: Date.now() });
     }
     getJob(id) {
         return this.jobs.get(id);
@@ -20,6 +28,7 @@ let ImportStatusService = class ImportStatusService {
         const job = this.jobs.get(id);
         if (job) {
             job.current = current;
+            job.timestamp = Date.now();
             if (message !== undefined)
                 job.message = message;
         }
@@ -29,6 +38,7 @@ let ImportStatusService = class ImportStatusService {
         if (job) {
             job.status = 'completed';
             job.message = message;
+            job.timestamp = Date.now();
         }
     }
     failJob(id, message) {
@@ -36,6 +46,15 @@ let ImportStatusService = class ImportStatusService {
         if (job) {
             job.status = 'failed';
             job.message = message;
+            job.timestamp = Date.now();
+        }
+    }
+    cleanup() {
+        const now = Date.now();
+        for (const [id, job] of this.jobs.entries()) {
+            if (now - job.timestamp > this.MAX_JOB_AGE) {
+                this.jobs.delete(id);
+            }
         }
     }
 };

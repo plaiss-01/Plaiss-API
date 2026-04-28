@@ -35,6 +35,7 @@ let AwinController = class AwinController {
     }
     productsCache = new Map();
     CACHE_TTL = 60000;
+    MAX_CACHE_SIZE = 20;
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
     }
@@ -51,7 +52,9 @@ let AwinController = class AwinController {
     }
     async getAllProducts(page = '1', limit = '50', category, subs) {
         const p = parseInt(page, 10) || 1;
-        const l = parseInt(limit, 10) || 50000;
+        let l = parseInt(limit, 10) || 50;
+        if (l > 1000)
+            l = 1000;
         const skip = (p - 1) * l;
         const cacheKey = `products-${p}-${l}-${category || 'all'}`;
         const now = Date.now();
@@ -159,7 +162,19 @@ let AwinController = class AwinController {
                 totalPages: Math.ceil(total / l),
             },
         };
+        if (this.productsCache.size >= this.MAX_CACHE_SIZE) {
+            const oldestKey = this.productsCache.keys().next().value;
+            if (oldestKey)
+                this.productsCache.delete(oldestKey);
+        }
         this.productsCache.set(cacheKey, { data: result, timestamp: now });
+        if (Math.random() < 0.1) {
+            for (const [key, value] of this.productsCache.entries()) {
+                if (now - value.timestamp > this.CACHE_TTL) {
+                    this.productsCache.delete(key);
+                }
+            }
+        }
         return result;
     }
     async getCategories() {
