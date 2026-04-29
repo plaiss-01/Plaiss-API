@@ -199,7 +199,7 @@ let AwinService = AwinService_1 = class AwinService {
                 imageUrl: row.merchant_image_url || row.aw_image_url,
                 productUrl: row.aw_deep_link,
                 merchant: row.merchant_name,
-                category: row.category_name,
+                category: this.extractLeafCategory(row.category_name || row.merchant_product_category_path),
                 merchantProductId: row.merchant_product_id,
                 merchantCategory: row.merchant_category,
                 merchantId: row.merchant_id,

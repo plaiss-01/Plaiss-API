@@ -119,18 +119,8 @@ export class AwinController {
         categoryNames = Array.from(new Set([...categoryNames, ...subArray]));
       }
 
-      // 3. Search across multiple fields for all discovered names
-      const keywords = new Set<string>();
-      const EXCLUDED = new Set(['and', 'or', 'of', 'for', 'with', 'the', 'a', '&', 'in', 'on', 'at']);
-      
-      categoryNames.forEach(name => {
-        keywords.add(name);
-        // Split by common delimiters but keep the original name too
-        const parts = name.split(/[\s&]| and | or /).map(p => p.trim()).filter(p => p.length > 2 && !EXCLUDED.has(p.toLowerCase()));
-        parts.forEach(p => keywords.add(p));
-      });
-
-      where.OR = Array.from(keywords).flatMap(name => [
+      // 3. Search across multiple fields for the full category names
+      where.OR = categoryNames.flatMap(name => [
         { category: { contains: name, mode: 'insensitive' } },
         { merchantCategory: { contains: name, mode: 'insensitive' } },
         { merchantProductCategoryPath: { contains: name, mode: 'insensitive' } }
