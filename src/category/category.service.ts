@@ -66,6 +66,42 @@ export class CategoryService {
     try {
       const slug = this.slugify(data.name);
 
+      const existing = await (this.prisma as any).category.findFirst({
+        where: {
+          OR: [
+            { slug },
+            { name: { equals: data.name, mode: 'insensitive' } }
+          ]
+        }
+      });
+
+      if (existing) {
+        const updateData: any = {};
+        let needsUpdate = false;
+
+        if (existing.isDeleted || existing.isAwin) {
+          updateData.isDeleted = false;
+          updateData.isAwin = false;
+          needsUpdate = true;
+        }
+
+        const requestedParentId = data.parentId || null;
+        if (existing.parentId !== requestedParentId) {
+          updateData.parentId = requestedParentId;
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          this.clearCache();
+          return await (this.prisma as any).category.update({
+            where: { id: existing.id },
+            data: updateData,
+            include: { children: true, parent: true }
+          });
+        }
+        return existing;
+      }
+
       const createData: any = {
         name: data.name,
         slug,
@@ -82,9 +118,6 @@ export class CategoryService {
         include: { children: true, parent: true },
       });
     } catch (error) {
-      if (error.code === 'P2002') {
-        throw new ConflictException('Category with this name or slug already exists');
-      }
       throw error;
     }
   }
