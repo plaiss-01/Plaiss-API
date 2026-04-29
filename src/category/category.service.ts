@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class CategoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   private categoriesCache: { data: any[], timestamp: number } | null = null;
   private readonly CACHE_TTL = 60000;
@@ -31,7 +31,7 @@ export class CategoryService {
 
       for (const part of parts) {
         const slug = this.slugify(part);
-        
+
         // Find existing or create
         let category = await (this.prisma as any).category.findFirst({
           where: { OR: [{ slug }, { name: { equals: part, mode: 'insensitive' } }] }
@@ -55,7 +55,7 @@ export class CategoryService {
           // The user said "those categories i deleted ... will sync again".
           // So we should NOT reactivate them during sync.
         }
-        
+
         currentParentId = category.id;
         lastCreated = category;
       }
@@ -65,13 +65,13 @@ export class CategoryService {
     // Normal single category creation
     try {
       const slug = this.slugify(data.name);
-      
+
       const createData: any = {
         name: data.name,
         slug,
         isAwin: data.isAwin || false,
       };
-      
+
       if (data.parentId && data.parentId !== '') {
         createData.parentId = data.parentId;
       }
@@ -99,7 +99,7 @@ export class CategoryService {
     if (!includeDeleted) {
       where.isDeleted = false;
     }
-    
+
     const data = await (this.prisma as any).category.findMany({
       where,
       include: {

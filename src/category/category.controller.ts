@@ -12,7 +12,7 @@ import { CategoryService } from './category.service';
 
 @Controller('categories')
 export class CategoryController {
-  constructor(private readonly categoryService: CategoryService) {}
+  constructor(private readonly categoryService: CategoryService) { }
 
   @Post()
   create(@Body() data: { name: string; parentId?: string; isAwin?: boolean }) {
@@ -28,7 +28,7 @@ export class CategoryController {
   restore(@Param('id') id: string) {
     return this.categoryService.restore(id);
   }
-  
+
   @Get('roots')
   findRoots() {
     return this.categoryService.findRoots();
