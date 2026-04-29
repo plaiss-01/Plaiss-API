@@ -1,48 +1,47 @@
 # Stage 1: Builder
-FROM node:20-alpine AS builder
-WORKDIR /app
+FROM node:22-alpine AS builder
 
-# Add build-time arguments for environment variables
-ARG DATABASE_URL
-ENV DATABASE_URL=$DATABASE_URL
-
-# Install build dependencies (required for some node modules and Prisma)
+# Install build dependencies
 RUN apk add --no-cache python3 make g++ openssl
 
-# Copy package files and prisma schema first to leverage Docker cache
+WORKDIR /app
+
+# Copy package files and prisma schema first
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install all dependencies (including devDependencies)
-RUN npm install
+# Install dependencies including devDependencies for build
+RUN npm ci
 
-# Copy source code and build the application
+# Copy source code
 COPY . .
+
+# Generate Prisma client and build the app
 RUN npx prisma generate
 RUN npm run build
 
-# Prune development dependencies to keep the image slim
-RUN npm prune --production
+# Prune development dependencies
+RUN npm prune --omit=dev
 
 # Stage 2: Runtime
-FROM node:20-alpine AS runtime
-WORKDIR /app
+FROM node:22-alpine AS runtime
 
-# Install runtime dependencies (OpenSSL is required by Prisma)
+# Install runtime dependencies (OpenSSL for Prisma)
 RUN apk add --no-cache openssl
 
-# Copy only the necessary files from the builder stage
+WORKDIR /app
+
+# Copy necessary files from builder
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 
-# Expose the application port (NestJS default is 3000, but set to 3001 here)
-EXPOSE 3001
-
-# Set production environment variables
+# Set production environment
 ENV NODE_ENV=production
 ENV PORT=3001
 
-# Start the application using the production script
-CMD ["npm", "run", "start:prod"]
+EXPOSE 3001
+
+# Use node directly for better signal handling
+CMD ["node", "dist/src/main.js"]
