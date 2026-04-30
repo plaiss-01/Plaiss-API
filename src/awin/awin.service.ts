@@ -21,15 +21,16 @@ export class AwinService {
     private readonly categoryService: CategoryService,
   ) {}
 
-  private slugify(text: string | undefined | null) {
-    if (!text) return `product-${Date.now()}`;
-    return text
+  private slugify(text: string | undefined | null, suffix?: string) {
+    if (!text) return `product-${suffix || Date.now()}`;
+    const slug = text
       .toString()
       .toLowerCase()
       .trim()
       .replace(/[^\w\s-]/g, '')
       .replace(/[\s_-]+/g, '-')
       .replace(/^-+|-+$/g, '');
+    return suffix ? `${slug}-${suffix}` : slug;
   }
 
   async addProductFromUrl(input: string) {
@@ -168,7 +169,7 @@ export class AwinService {
       where: { awinId: row.aw_product_id },
       update: {
         name: row.product_name,
-        slug: this.slugify(row.product_name),
+        slug: this.slugify(row.product_name, row.aw_product_id),
         description: row.description,
         price: parseFloat(row.search_price) || 0,
         currency: row.currency,
@@ -257,7 +258,7 @@ export class AwinService {
       create: {
         awinId: row.aw_product_id,
         name: row.product_name,
-        slug: this.slugify(row.product_name),
+        slug: this.slugify(row.product_name, row.aw_product_id),
         description: row.description,
         price: parseFloat(row.search_price) || 0,
         currency: row.currency,
@@ -410,7 +411,7 @@ export class AwinService {
         where: { awinId: awinId },
         update: {
           name,
-          slug: this.slugify(name),
+          slug: this.slugify(name, awinId),
           description,
           price,
           currency,
@@ -424,7 +425,7 @@ export class AwinService {
         create: {
           awinId,
           name,
-          slug: this.slugify(name),
+          slug: this.slugify(name, awinId),
           description,
           price,
           currency,
