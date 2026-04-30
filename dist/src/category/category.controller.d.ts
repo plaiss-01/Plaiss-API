@@ -7,8 +7,7 @@ export declare class CategoryController {
         parentId?: string;
         isAwin?: boolean;
     }): Promise<any>;
-    findAll(includeDeleted?: string): Promise<any>;
-    restore(id: string): Promise<any>;
+    findAll(): Promise<any>;
     findRoots(): Promise<any>;
     reorder(orders: {
         id: string;
@@ -20,9 +19,14 @@ export declare class CategoryController {
     }>;
     findBySlug(slug: string): Promise<any>;
     findOne(id: string): Promise<any>;
+    bulkLink(data: {
+        ids: string[];
+        parentId: string;
+    }): Promise<any>;
     update(id: string, data: {
         name?: string;
         parentId?: string | null;
     }): Promise<any>;
     remove(id: string): Promise<any>;
+    removeAll(): Promise<any>;
 }

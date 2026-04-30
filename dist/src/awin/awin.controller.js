@@ -67,14 +67,24 @@ let AwinController = class AwinController {
         const where = {};
         if (category && category !== 'all-products') {
             let categoryNames = [category];
-            const currentCat = await this.prisma.category.findFirst({
+            let currentCat = await this.prisma.category.findFirst({
                 where: {
                     OR: [
-                        { name: { contains: category, mode: 'insensitive' } },
-                        { slug: { contains: category, mode: 'insensitive' } }
+                        { name: { equals: category, mode: 'insensitive' } },
+                        { slug: { equals: category, mode: 'insensitive' } }
                     ]
                 },
             });
+            if (!currentCat) {
+                currentCat = await this.prisma.category.findFirst({
+                    where: {
+                        OR: [
+                            { name: { contains: category, mode: 'insensitive' } },
+                            { slug: { contains: category, mode: 'insensitive' } }
+                        ]
+                    },
+                });
+            }
             if (currentCat) {
                 const allCats = await this.categoryService.findAll();
                 const categoryMap = new Map();
@@ -381,8 +391,8 @@ __decorate([
 ], AwinController.prototype, "deleteProduct", null);
 __decorate([
     (0, common_1.Delete)('products/by-merchant/:merchantName'),
-    (0, swagger_1.ApiOperation)({ summary: 'Delete all products from a specific merchant' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'All products from the merchant have been deleted.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete all products from a specific merchant (Hard Delete)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'All products from the merchant have been permanently removed.' }),
     __param(0, (0, common_1.Param)('merchantName')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

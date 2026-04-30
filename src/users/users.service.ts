@@ -8,7 +8,12 @@ export class UsersService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    await this.createSuperAdmin();
+    try {
+      await this.createSuperAdmin();
+    } catch (error) {
+      console.error('Failed to initialize super admin:', error.message);
+      // Don't throw error to allow app to start
+    }
   }
 
   async createSuperAdmin() {

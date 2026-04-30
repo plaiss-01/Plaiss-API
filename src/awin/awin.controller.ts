@@ -78,14 +78,26 @@ export class AwinController {
       let categoryNames = [category];
 
       // 1. Try to find the category in the database first (more permissive search)
-      const currentCat = await this.prisma.category.findFirst({
+      // 1. Try to find the category in the database first (Exact match first, then partial)
+      let currentCat = await this.prisma.category.findFirst({
         where: {
           OR: [
-            { name: { contains: category, mode: 'insensitive' } },
-            { slug: { contains: category, mode: 'insensitive' } }
+            { name: { equals: category, mode: 'insensitive' } },
+            { slug: { equals: category, mode: 'insensitive' } }
           ]
         },
       });
+
+      if (!currentCat) {
+        currentCat = await this.prisma.category.findFirst({
+          where: {
+            OR: [
+              { name: { contains: category, mode: 'insensitive' } },
+              { slug: { contains: category, mode: 'insensitive' } }
+            ]
+          },
+        });
+      }
 
       if (currentCat) {
         const allCats = await this.categoryService.findAll();
@@ -337,8 +349,8 @@ export class AwinController {
   }
 
   @Delete('products/by-merchant/:merchantName')
-  @ApiOperation({ summary: 'Delete all products from a specific merchant' })
-  @ApiResponse({ status: 200, description: 'All products from the merchant have been deleted.' })
+  @ApiOperation({ summary: 'Delete all products from a specific merchant (Hard Delete)' })
+  @ApiResponse({ status: 200, description: 'All products from the merchant have been permanently removed.' })
   async deleteProductsByMerchant(@Param('merchantName') merchantName: string) {
     const result = await this.prisma.product.deleteMany({
       where: {

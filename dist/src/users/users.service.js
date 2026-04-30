@@ -52,7 +52,12 @@ let UsersService = class UsersService {
         this.prisma = prisma;
     }
     async onModuleInit() {
-        await this.createSuperAdmin();
+        try {
+            await this.createSuperAdmin();
+        }
+        catch (error) {
+            console.error('Failed to initialize super admin:', error.message);
+        }
     }
     async createSuperAdmin() {
         const adminEmail = 'admin@plaiss.com';

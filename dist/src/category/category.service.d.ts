@@ -11,12 +11,13 @@ export declare class CategoryService {
         parentId?: string;
         isAwin?: boolean;
     }): Promise<any>;
-    findAll(includeDeleted?: boolean): Promise<any>;
+    findAll(): Promise<any>;
     findRoots(): Promise<any>;
     reorder(orders: {
         id: string;
         order: number;
     }[]): Promise<any[]>;
+    bulkLink(ids: string[], parentId: string): Promise<any>;
     findOne(id: string): Promise<any>;
     findBySlug(slug: string): Promise<any>;
     update(id: string, data: {
@@ -24,7 +25,7 @@ export declare class CategoryService {
         parentId?: string | null;
     }): Promise<any>;
     remove(id: string): Promise<any>;
-    restore(id: string): Promise<any>;
+    removeAll(): Promise<any>;
     syncAwinCategories(): Promise<{
         message: string;
         newlyCreated: number;

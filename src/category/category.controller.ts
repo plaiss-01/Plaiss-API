@@ -20,13 +20,8 @@ export class CategoryController {
   }
 
   @Get()
-  findAll(@Query('includeDeleted') includeDeleted?: string) {
-    return this.categoryService.findAll(includeDeleted === 'true');
-  }
-
-  @Patch(':id/restore')
-  restore(@Param('id') id: string) {
-    return this.categoryService.restore(id);
+  findAll() {
+    return this.categoryService.findAll();
   }
 
   @Get('roots')
@@ -55,6 +50,11 @@ export class CategoryController {
     return this.categoryService.findOne(id);
   }
 
+  @Patch('bulk-link')
+  bulkLink(@Body() data: { ids: string[]; parentId: string }) {
+    return this.categoryService.bulkLink(data.ids, data.parentId);
+  }
+
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -66,5 +66,10 @@ export class CategoryController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.categoryService.remove(id);
+  }
+
+  @Delete()
+  removeAll() {
+    return this.categoryService.removeAll();
   }
 }

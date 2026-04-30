@@ -138,7 +138,6 @@ model Category {
   parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
   children  Category[] @relation("SubCategories")
   isAwin    Boolean    @default(false)
-  isDeleted Boolean    @default(false)
   order     Int        @default(0)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt

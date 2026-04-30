@@ -83,8 +83,17 @@ let AwinService = AwinService_1 = class AwinService {
         if (urls.length === 0)
             return { message: 'No valid URLs provided' };
         const results = [];
-        for (const url of urls) {
+        for (let url of urls) {
             try {
+                if (url.includes('awin1.com') && url.includes('ued=')) {
+                    const uedMatch = url.match(/[?&]ued=([^&]+)/);
+                    if (uedMatch) {
+                        const decodedUrl = decodeURIComponent(uedMatch[1]);
+                        if (decodedUrl.startsWith('http')) {
+                            url = decodedUrl;
+                        }
+                    }
+                }
                 if (url.includes('datafeed/download')) {
                     const jobId = `feed-${Date.now()}`;
                     this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting feed import...');
@@ -103,17 +112,36 @@ let AwinService = AwinService_1 = class AwinService {
                 results.push({ url, status: 'error', error: error.message });
             }
         }
-        return results.length === 1 ? results[0].data : { results };
+        if (results.length === 1) {
+            if (results[0].status === 'error') {
+                throw new Error(results[0].error || 'Failed to import product');
+            }
+            if (results[0].jobId) {
+                return { jobId: results[0].jobId, status: 'started', url: results[0].url };
+            }
+            return results[0].data;
+        }
+        return { results };
     }
     async processFeed(url, jobId) {
-        if (url.includes('datafeed/download') && !url.includes('/columns/')) {
-            if (!url.endsWith('/'))
-                url += '/';
-            url += 'columns/any/format/csv/compression/gzip/';
+        if (url.includes('datafeed/download') && !url.includes('/columns/') && !url.includes('columns=')) {
+            if (url.includes('download.php')) {
+                const separator = url.includes('?') ? '&' : '?';
+                url += `${separator}columns=any&format=csv&compression=gzip`;
+            }
+            else {
+                url = url.replace(/\/$/, '');
+                url += '/columns/any/format/csv/compression/gzip/';
+            }
         }
-        this.logger.log(`Processing Awin Feed: ${url}`);
+        this.logger.log(`Fetching feed from: ${url}`);
         try {
-            const response = await (0, rxjs_1.firstValueFrom)(this.httpService.get(url, { responseType: 'stream' }));
+            const response = await (0, rxjs_1.firstValueFrom)(this.httpService.get(url, {
+                responseType: 'stream',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+            }));
             const stream = response.data;
             const isGzip = url.includes('compression/gzip') ||
                 response.headers['content-encoding'] === 'gzip' ||
@@ -124,33 +152,52 @@ let AwinService = AwinService_1 = class AwinService {
                 parserStream = stream.pipe(zlib.createGunzip());
             }
             const parser = parserStream.pipe(csv.parse({ headers: true }));
+            this.logger.log(`Starting to parse CSV stream...`);
+            let rowsProcessed = 0;
+            let rowsSkipped = 0;
             for await (const row of parser) {
                 try {
-                    if (!row.aw_product_id || !row.product_name) {
-                        this.logger.warn(`Skipping malformed row: Missing product ID or name`);
+                    const normalizedRow = {};
+                    Object.keys(row).forEach(key => {
+                        const normalizedKey = key.toLowerCase().replace(/[\s_]/g, '');
+                        normalizedRow[normalizedKey] = row[key];
+                    });
+                    const awProductId = normalizedRow.awproductid || normalizedRow.productid || normalizedRow.id;
+                    const productName = normalizedRow.productname || normalizedRow.name;
+                    if (!awProductId || !productName) {
+                        rowsSkipped++;
+                        if (rowsSkipped % 100 === 0 || rowsSkipped === 1) {
+                            this.logger.warn(`Skipping malformed row ${rowsProcessed + rowsSkipped}: Missing product ID or name. Available keys: ${Object.keys(row).join(', ')}`);
+                        }
                         continue;
                     }
-                    await this.upsertProduct(row);
-                    count++;
-                    if (count % 10 === 0) {
-                        this.logger.log(`Imported ${count} products...`);
+                    const rowWithMapping = { ...row, aw_product_id: awProductId, product_name: productName };
+                    await this.upsertProduct(rowWithMapping);
+                    rowsProcessed++;
+                    if (rowsProcessed % 100 === 0) {
+                        this.logger.log(`Imported ${rowsProcessed} products (Skipped ${rowsSkipped})...`);
                         if (jobId) {
-                            this.statusService.updateJob(jobId, count, `Imported ${count} products...`);
+                            this.statusService.updateJob(jobId, rowsProcessed, `Imported ${rowsProcessed} products...`);
                         }
                     }
                 }
                 catch (err) {
-                    this.logger.error(`Error saving product ${row.aw_product_id}: ${err.message}`);
+                    this.logger.error(`Error saving row: ${err.message}`);
                 }
             }
-            this.logger.log(`Feed processing complete. Total imported: ${count}`);
+            this.logger.log(`Feed processing complete. Total imported: ${rowsProcessed}, Total skipped: ${rowsSkipped}`);
             if (jobId) {
-                this.statusService.completeJob(jobId, `Successfully imported ${count} products.`);
+                this.statusService.completeJob(jobId, `Successfully imported ${rowsProcessed} products.`);
             }
-            return { message: 'Feed processed successfully', count };
+            return { message: 'Feed processed successfully', count: rowsProcessed };
         }
         catch (error) {
-            this.logger.error(`Failed to process feed: ${error.message}`);
+            if (error.response) {
+                this.logger.error(`Failed to process feed: Status ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+            }
+            else {
+                this.logger.error(`Failed to process feed: ${error.message}`);
+            }
             if (jobId)
                 this.statusService.failJob(jobId, error.message);
             throw error;
@@ -180,191 +227,136 @@ let AwinService = AwinService_1 = class AwinService {
             return { count };
         }
         catch (error) {
-            this.logger.error(`Failed to process CSV file: ${error.message}`);
+            if (error.response) {
+                this.logger.error(`Failed to process feed: Status ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+            }
+            else {
+                this.logger.error(`Failed to process feed: ${error.message}`);
+            }
             this.statusService.failJob(jobId, error.message);
             throw error;
         }
     }
     async upsertProduct(row) {
-        if (row.category_name) {
-            await this.categoryService.create({ name: row.category_name, isAwin: true }).catch(() => { });
+        const normalizedRow = {};
+        Object.keys(row).forEach(key => {
+            const normalizedKey = key.toLowerCase().replace(/[\s_]/g, '');
+            normalizedRow[normalizedKey] = row[key];
+        });
+        const getVal = (keys) => {
+            for (const k of keys) {
+                const normalized = k.toLowerCase().replace(/[\s_]/g, '');
+                if (normalizedRow[normalized] !== undefined)
+                    return normalizedRow[normalized];
+            }
+            return undefined;
+        };
+        const awProductId = getVal(['aw_product_id', 'awproductid', 'productid', 'id']);
+        const productName = getVal(['product_name', 'productname', 'name', 'title']);
+        const categoryName = getVal(['category_name', 'categoryname', 'category', 'merchant_category']);
+        let finalCategory = this.extractLeafCategory(categoryName || getVal(['merchant_product_category_path']));
+        if (finalCategory) {
+            const catRecord = await this.prisma.category.findFirst({
+                where: { name: { equals: finalCategory, mode: 'insensitive' } },
+                include: { parent: true }
+            });
+            if (catRecord?.isAwin && catRecord?.parent && !catRecord.parent.isAwin) {
+                finalCategory = catRecord.parent.name;
+            }
         }
+        const productData = {
+            name: productName,
+            slug: this.slugify(productName, awProductId),
+            description: getVal(['description', 'product_description']),
+            price: parseFloat(getVal(['search_price', 'price'])) || 0,
+            currency: getVal(['currency']),
+            imageUrl: getVal(['merchant_image_url', 'aw_image_url', 'image_url', 'image']),
+            productUrl: getVal(['aw_deep_link', 'product_url', 'url']),
+            merchant: getVal(['merchant_name', 'merchant', 'store_name']),
+            category: finalCategory,
+            merchantProductId: getVal(['merchant_product_id']),
+            merchantCategory: categoryName,
+            merchantId: getVal(['merchant_id']),
+            categoryId: getVal(['category_id']),
+            storePrice: parseFloat(getVal(['store_price'])) || null,
+            deliveryCost: parseFloat(getVal(['delivery_cost'])) || null,
+            merchantDeepLink: getVal(['merchant_deep_link']),
+            language: getVal(['language']),
+            lastUpdated: getVal(['last_updated']),
+            displayPrice: getVal(['display_price']),
+            dataFeedId: getVal(['data_feed_id']),
+            brandName: getVal(['brand_name', 'brand']),
+            brandId: getVal(['brand_id']),
+            colour: getVal(['colour', 'color']),
+            productShortDescription: getVal(['product_short_description']),
+            specifications: getVal(['specifications']),
+            condition: getVal(['condition']),
+            productModel: getVal(['product_model']),
+            modelNumber: getVal(['model_number']),
+            dimensions: getVal(['dimensions']),
+            keywords: getVal(['keywords']),
+            promotionalText: getVal(['promotional_text']),
+            productType: getVal(['product_type']),
+            commissionGroup: getVal(['commission_group']),
+            merchantProductCategoryPath: getVal(['merchant_product_category_path']),
+            merchantProductSecondCategory: getVal(['merchant_product_second_category']),
+            merchantProductThirdCategory: getVal(['merchant_product_third_category']),
+            rrpPrice: parseFloat(getVal(['rrp_price'])) || null,
+            saving: parseFloat(getVal(['saving'])) || null,
+            savingsPercent: getVal(['savings_percent']),
+            basePrice: parseFloat(getVal(['base_price'])) || null,
+            basePriceAmount: parseFloat(getVal(['base_price_amount'])) || null,
+            basePriceText: getVal(['base_price_text']),
+            productPriceOld: parseFloat(getVal(['product_price_old'])) || null,
+            deliveryRestrictions: getVal(['delivery_restrictions']),
+            deliveryWeight: getVal(['delivery_weight']),
+            warranty: getVal(['warranty']),
+            termsOfContract: getVal(['terms_of_contract']),
+            deliveryTime: getVal(['delivery_time']),
+            inStock: getVal(['in_stock']),
+            stockQuantity: parseInt(getVal(['stock_quantity'])) || null,
+            validFrom: getVal(['valid_from']),
+            validTo: getVal(['valid_to']),
+            isForSale: getVal(['is_for_sale']),
+            webOffer: getVal(['web_offer']),
+            preOrder: getVal(['pre_order']),
+            stockStatus: getVal(['stock_status']),
+            sizeStockStatus: getVal(['size_stock_status']),
+            sizeStockAmount: getVal(['size_stock_amount']),
+            merchantThumbUrl: getVal(['merchant_thumb_url']),
+            largeImage: getVal(['large_image']),
+            alternateImage: getVal(['alternate_image']),
+            awThumbUrl: getVal(['aw_thumb_url']),
+            alternateImageTwo: getVal(['alternate_image_two']),
+            alternateImageThree: getVal(['alternate_image_three']),
+            alternateImageFour: getVal(['alternate_image_four']),
+            reviews: getVal(['reviews']),
+            averageRating: getVal(['average_rating']),
+            rating: getVal(['rating']),
+            numberAvailable: getVal(['number_available']),
+            custom1: getVal(['custom1', 'custom_1']),
+            custom2: getVal(['custom2', 'custom_2']),
+            custom3: getVal(['custom3', 'custom_3']),
+            custom4: getVal(['custom4', 'custom_4']),
+            custom5: getVal(['custom5', 'custom_5']),
+            custom6: getVal(['custom6', 'custom_6']),
+            custom7: getVal(['custom7', 'custom_7']),
+            custom8: getVal(['custom8', 'custom_8']),
+            custom9: getVal(['custom9', 'custom_9']),
+            ean: getVal(['ean']),
+            isbn: getVal(['isbn']),
+            upc: getVal(['upc']),
+            mpn: getVal(['mpn']),
+            parentProductId: getVal(['parent_product_id', 'parentproductid']),
+            productGTIN: getVal(['product_gtin', 'productgtin']),
+            basketLink: getVal(['basket_link', 'basketlink']),
+        };
         return this.prisma.product.upsert({
-            where: { awinId: row.aw_product_id },
-            update: {
-                name: row.product_name,
-                slug: this.slugify(row.product_name, row.aw_product_id),
-                description: row.description,
-                price: parseFloat(row.search_price) || 0,
-                currency: row.currency,
-                imageUrl: row.merchant_image_url || row.aw_image_url,
-                productUrl: row.aw_deep_link,
-                merchant: row.merchant_name,
-                category: this.extractLeafCategory(row.category_name || row.merchant_product_category_path),
-                merchantProductId: row.merchant_product_id,
-                merchantCategory: row.merchant_category,
-                merchantId: row.merchant_id,
-                categoryId: row.category_id,
-                storePrice: parseFloat(row.store_price) || null,
-                deliveryCost: parseFloat(row.delivery_cost) || null,
-                merchantDeepLink: row.merchant_deep_link,
-                language: row.language,
-                lastUpdated: row.last_updated,
-                displayPrice: row.display_price,
-                dataFeedId: row.data_feed_id,
-                brandName: row.brand_name,
-                brandId: row.brand_id,
-                colour: row.colour,
-                productShortDescription: row.product_short_description,
-                specifications: row.specifications,
-                condition: row.condition,
-                productModel: row.product_model,
-                modelNumber: row.model_number,
-                dimensions: row.dimensions,
-                keywords: row.keywords,
-                promotionalText: row.promotional_text,
-                productType: row.product_type,
-                commissionGroup: row.commission_group,
-                merchantProductCategoryPath: row.merchant_product_category_path,
-                merchantProductSecondCategory: row.merchant_product_second_category,
-                merchantProductThirdCategory: row.merchant_product_third_category,
-                rrpPrice: parseFloat(row.rrp_price) || null,
-                saving: parseFloat(row.saving) || null,
-                savingsPercent: row.savings_percent,
-                basePrice: parseFloat(row.base_price) || null,
-                basePriceAmount: parseFloat(row.base_price_amount) || null,
-                basePriceText: row.base_price_text,
-                productPriceOld: parseFloat(row.product_price_old) || null,
-                deliveryRestrictions: row.delivery_restrictions,
-                deliveryWeight: row.delivery_weight,
-                warranty: row.warranty,
-                termsOfContract: row.terms_of_contract,
-                deliveryTime: row.delivery_time,
-                inStock: row.in_stock,
-                stockQuantity: parseInt(row.stock_quantity) || null,
-                validFrom: row.valid_from,
-                validTo: row.valid_to,
-                isForSale: row.is_for_sale,
-                webOffer: row.web_offer,
-                preOrder: row.pre_order,
-                stockStatus: row.stock_status,
-                sizeStockStatus: row.size_stock_status,
-                sizeStockAmount: row.size_stock_amount,
-                merchantThumbUrl: row.merchant_thumb_url,
-                largeImage: row.large_image,
-                alternateImage: row.alternate_image,
-                awThumbUrl: row.aw_thumb_url,
-                alternateImageTwo: row.alternate_image_two,
-                alternateImageThree: row.alternate_image_three,
-                alternateImageFour: row.alternate_image_four,
-                reviews: row.reviews,
-                averageRating: row.average_rating,
-                rating: row.rating,
-                numberAvailable: row.number_available,
-                custom1: row.custom_1,
-                custom2: row.custom_2,
-                custom3: row.custom_3,
-                custom4: row.custom_4,
-                custom5: row.custom_5,
-                custom6: row.custom_6,
-                custom7: row.custom_7,
-                custom8: row.custom_8,
-                custom9: row.custom_9,
-                ean: row.ean,
-                isbn: row.isbn,
-                upc: row.upc,
-                mpn: row.mpn,
-                parentProductId: row.parent_product_id,
-                productGTIN: row.product_GTIN,
-                basketLink: row.basket_link,
-            },
+            where: { awinId: awProductId },
+            update: productData,
             create: {
-                awinId: row.aw_product_id,
-                name: row.product_name,
-                slug: this.slugify(row.product_name, row.aw_product_id),
-                description: row.description,
-                price: parseFloat(row.search_price) || 0,
-                currency: row.currency,
-                imageUrl: row.merchant_image_url || row.aw_image_url,
-                productUrl: row.aw_deep_link,
-                merchant: row.merchant_name,
-                category: this.extractLeafCategory(row.category_name || row.merchant_product_category_path),
-                merchantProductId: row.merchant_product_id,
-                merchantCategory: row.merchant_category,
-                merchantId: row.merchant_id,
-                categoryId: row.category_id,
-                storePrice: parseFloat(row.store_price) || null,
-                deliveryCost: parseFloat(row.delivery_cost) || null,
-                merchantDeepLink: row.merchant_deep_link,
-                language: row.language,
-                lastUpdated: row.last_updated,
-                displayPrice: row.display_price,
-                dataFeedId: row.data_feed_id,
-                brandName: row.brand_name,
-                brandId: row.brand_id,
-                colour: row.colour,
-                productShortDescription: row.product_short_description,
-                specifications: row.specifications,
-                condition: row.condition,
-                productModel: row.product_model,
-                modelNumber: row.model_number,
-                dimensions: row.dimensions,
-                keywords: row.keywords,
-                promotionalText: row.promotional_text,
-                productType: row.product_type,
-                commissionGroup: row.commission_group,
-                merchantProductCategoryPath: row.merchant_product_category_path,
-                merchantProductSecondCategory: row.merchant_product_second_category,
-                merchantProductThirdCategory: row.merchant_product_third_category,
-                rrpPrice: parseFloat(row.rrp_price) || null,
-                saving: parseFloat(row.saving) || null,
-                savingsPercent: row.savings_percent,
-                basePrice: parseFloat(row.base_price) || null,
-                basePriceAmount: parseFloat(row.base_price_amount) || null,
-                basePriceText: row.base_price_text,
-                productPriceOld: parseFloat(row.product_price_old) || null,
-                deliveryRestrictions: row.delivery_restrictions,
-                deliveryWeight: row.delivery_weight,
-                warranty: row.warranty,
-                termsOfContract: row.terms_of_contract,
-                deliveryTime: row.delivery_time,
-                inStock: row.in_stock,
-                stockQuantity: parseInt(row.stock_quantity) || null,
-                validFrom: row.valid_from,
-                validTo: row.valid_to,
-                isForSale: row.is_for_sale,
-                webOffer: row.web_offer,
-                preOrder: row.pre_order,
-                stockStatus: row.stock_status,
-                sizeStockStatus: row.size_stock_status,
-                sizeStockAmount: row.size_stock_amount,
-                merchantThumbUrl: row.merchant_thumb_url,
-                largeImage: row.large_image,
-                alternateImage: row.alternate_image,
-                awThumbUrl: row.aw_thumb_url,
-                alternateImageTwo: row.alternate_image_two,
-                alternateImageThree: row.alternate_image_three,
-                alternateImageFour: row.alternate_image_four,
-                reviews: row.reviews,
-                averageRating: row.average_rating,
-                rating: row.rating,
-                numberAvailable: row.number_available,
-                custom1: row.custom_1,
-                custom2: row.custom_2,
-                custom3: row.custom_3,
-                custom4: row.custom_4,
-                custom5: row.custom_5,
-                custom6: row.custom_6,
-                custom7: row.custom_7,
-                custom8: row.custom_8,
-                custom9: row.custom_9,
-                ean: row.ean,
-                isbn: row.isbn,
-                upc: row.upc,
-                mpn: row.mpn,
-                parentProductId: row.parent_product_id,
-                productGTIN: row.product_GTIN,
-                basketLink: row.basket_link,
+                ...productData,
+                awinId: awProductId,
             },
         });
     }
@@ -392,7 +384,7 @@ let AwinService = AwinService_1 = class AwinService {
             const priceMeta = $('meta[property="product:price:amount"]').attr('content') ||
                 $('meta[name="twitter:data1"]').attr('content') ||
                 $('[itemprop="price"]').attr('content');
-            if (priceMeta) {
+            if (priceMeta && typeof priceMeta === 'string') {
                 price = parseFloat(priceMeta.replace(/[^0-9.]/g, '')) || 0;
             }
             const currency = $('meta[property="product:price:currency"]').attr('content') ||

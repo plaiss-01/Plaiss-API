@@ -44,17 +44,11 @@ export class CategoryService {
               slug,
               parentId: currentParentId,
               isAwin: data.isAwin || false,
-              isDeleted: false,
             },
             include: { children: true, parent: true }
           });
-        } else if (category.isDeleted) {
-          // If it was deleted, reactivate it if it's being created/synced again?
-          // Actually, let's keep it deleted if it was manually deleted.
-          // Or maybe we should reactivate it? 
-          // The user said "those categories i deleted ... will sync again".
-          // So we should NOT reactivate them during sync.
         }
+
 
         currentParentId = category.id;
         lastCreated = category;
@@ -79,8 +73,9 @@ export class CategoryService {
         const updateData: any = {};
         let needsUpdate = false;
 
-        if (existing.isDeleted || existing.isAwin) {
-          updateData.isDeleted = false;
+        // Only flip isAwin to false if we are explicitly creating a manual category
+        // and the existing one was an Awin category.
+        if (existing.isAwin && data.isAwin !== true) {
           updateData.isAwin = false;
           needsUpdate = true;
         }
@@ -122,44 +117,31 @@ export class CategoryService {
     }
   }
 
-  async findAll(includeDeleted = false) {
+  async findAll() {
     const now = Date.now();
-    if (!includeDeleted && this.categoriesCache && (now - this.categoriesCache.timestamp < this.CACHE_TTL)) {
+    if (this.categoriesCache && (now - this.categoriesCache.timestamp < this.CACHE_TTL)) {
       return this.categoriesCache.data;
     }
 
-    const where: any = {};
-    if (!includeDeleted) {
-      where.isDeleted = false;
-    }
-
     const data = await (this.prisma as any).category.findMany({
-      where,
       include: {
-        children: {
-          where: includeDeleted ? {} : { isDeleted: false }
-        },
+        children: true,
         parent: true,
       },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
     });
 
-    if (!includeDeleted) {
-      this.categoriesCache = { data, timestamp: now };
-    }
+    this.categoriesCache = { data, timestamp: now };
     return data;
   }
 
   async findRoots() {
     return (this.prisma as any).category.findMany({
-      where: { parentId: null, isDeleted: false, isAwin: false },
+      where: { parentId: null, isAwin: false },
       include: {
         children: {
-          where: { isDeleted: false },
           include: {
-            children: {
-              where: { isDeleted: false }
-            },
+            children: true,
             parent: true,
           },
         },
@@ -178,6 +160,43 @@ export class CategoryService {
       }),
     );
     return Promise.all(updates);
+  }
+
+  async bulkLink(ids: string[], parentId: string) {
+    this.clearCache();
+
+    // 1. Get the target parent
+    const parent = await (this.prisma as any).category.findUnique({ where: { id: parentId } });
+    if (!parent) throw new NotFoundException('Parent category not found');
+
+    // 2. Get names of categories being merged
+    const mergedCats = await (this.prisma as any).category.findMany({
+      where: { id: { in: ids } },
+      select: { name: true, isAwin: true }
+    });
+    const mergedNames = mergedCats.map(c => c.name);
+    const awinNamesToMerge = mergedCats.filter(c => c.isAwin).map(c => c.name);
+
+    // 3. Perform the link
+    const result = await (this.prisma as any).category.updateMany({
+      where: { id: { in: ids } },
+      data: { parentId, isAwin: false },
+    });
+
+    // 4. If target parent is Manual, merge products from AWIN categories into it
+    if (!parent.isAwin && awinNamesToMerge.length > 0) {
+      await this.prisma.product.updateMany({
+        where: {
+          OR: [
+            { category: { in: awinNamesToMerge } },
+            { merchantCategory: { in: awinNamesToMerge } }
+          ]
+        },
+        data: { category: parent.name }
+      });
+    }
+
+    return result;
   }
 
 
@@ -201,11 +220,33 @@ export class CategoryService {
   }
 
   async update(id: string, data: { name?: string; parentId?: string | null }) {
-    const updateData: any = { ...data };
+    const updateData: any = { ...data, isAwin: false };
     if (data.name) {
       updateData.slug = this.slugify(data.name);
     }
+
     this.clearCache();
+
+    // If we are linking to a parent, handle product merging
+    if (data.parentId) {
+      const [category, parent] = await Promise.all([
+        (this.prisma as any).category.findUnique({ where: { id } }),
+        (this.prisma as any).category.findUnique({ where: { id: data.parentId } })
+      ]);
+
+      if (category && category.isAwin && parent && !parent.isAwin) {
+        await this.prisma.product.updateMany({
+          where: {
+            OR: [
+              { category: category.name },
+              { merchantCategory: category.name }
+            ]
+          },
+          data: { category: parent.name }
+        });
+      }
+    }
+
     return (this.prisma as any).category.update({
       where: { id },
       data: updateData,
@@ -215,18 +256,14 @@ export class CategoryService {
 
   async remove(id: string) {
     this.clearCache();
-    return (this.prisma as any).category.update({
-      where: { id },
-      data: { isDeleted: true }
+    return (this.prisma as any).category.delete({
+      where: { id }
     });
   }
 
-  async restore(id: string) {
+  async removeAll() {
     this.clearCache();
-    return (this.prisma as any).category.update({
-      where: { id },
-      data: { isDeleted: false }
-    });
+    return (this.prisma as any).category.deleteMany({});
   }
 
   async syncAwinCategories() {
@@ -251,18 +288,32 @@ export class CategoryService {
       });
       if (!existing) {
         const cat = await (this.prisma as any).category.create({
-          data: { name, slug, isAwin: true, isDeleted: false },
+          data: { name, slug, isAwin: true },
         });
         created.push(cat);
-      } else if (!existing.isDeleted) {
-        const updateData: any = { isAwin: true };
+      } else {
+        const updateData: any = {};
+        let needsUpdate = false;
+
+        // If it exists but is NOT yet marked as Awin, and it's a root category 
+        // (no parent), we can safely mark it as Awin so it moves to the 
+        // sub-item management pool instead of the main list.
+        if (!existing.isAwin && !existing.parentId) {
+          updateData.isAwin = true;
+          needsUpdate = true;
+        }
+
         if (!existing.slug) {
           updateData.slug = slug;
+          needsUpdate = true;
         }
-        await (this.prisma as any).category.update({
-          where: { id: existing.id },
-          data: updateData,
-        });
+
+        if (needsUpdate) {
+          await (this.prisma as any).category.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+        }
       }
     }
 

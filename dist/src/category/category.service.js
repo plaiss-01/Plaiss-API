@@ -48,12 +48,9 @@ let CategoryService = class CategoryService {
                             slug,
                             parentId: currentParentId,
                             isAwin: data.isAwin || false,
-                            isDeleted: false,
                         },
                         include: { children: true, parent: true }
                     });
-                }
-                else if (category.isDeleted) {
                 }
                 currentParentId = category.id;
                 lastCreated = category;
@@ -73,8 +70,7 @@ let CategoryService = class CategoryService {
             if (existing) {
                 const updateData = {};
                 let needsUpdate = false;
-                if (existing.isDeleted || existing.isAwin) {
-                    updateData.isDeleted = false;
+                if (existing.isAwin && data.isAwin !== true) {
                     updateData.isAwin = false;
                     needsUpdate = true;
                 }
@@ -111,40 +107,28 @@ let CategoryService = class CategoryService {
             throw error;
         }
     }
-    async findAll(includeDeleted = false) {
+    async findAll() {
         const now = Date.now();
-        if (!includeDeleted && this.categoriesCache && (now - this.categoriesCache.timestamp < this.CACHE_TTL)) {
+        if (this.categoriesCache && (now - this.categoriesCache.timestamp < this.CACHE_TTL)) {
             return this.categoriesCache.data;
         }
-        const where = {};
-        if (!includeDeleted) {
-            where.isDeleted = false;
-        }
         const data = await this.prisma.category.findMany({
-            where,
             include: {
-                children: {
-                    where: includeDeleted ? {} : { isDeleted: false }
-                },
+                children: true,
                 parent: true,
             },
             orderBy: [{ order: 'asc' }, { name: 'asc' }],
         });
-        if (!includeDeleted) {
-            this.categoriesCache = { data, timestamp: now };
-        }
+        this.categoriesCache = { data, timestamp: now };
         return data;
     }
     async findRoots() {
         return this.prisma.category.findMany({
-            where: { parentId: null, isDeleted: false, isAwin: false },
+            where: { parentId: null, isAwin: false },
             include: {
                 children: {
-                    where: { isDeleted: false },
                     include: {
-                        children: {
-                            where: { isDeleted: false }
-                        },
+                        children: true,
                         parent: true,
                     },
                 },
@@ -160,6 +144,34 @@ let CategoryService = class CategoryService {
             data: { order: item.order },
         }));
         return Promise.all(updates);
+    }
+    async bulkLink(ids, parentId) {
+        this.clearCache();
+        const parent = await this.prisma.category.findUnique({ where: { id: parentId } });
+        if (!parent)
+            throw new common_1.NotFoundException('Parent category not found');
+        const mergedCats = await this.prisma.category.findMany({
+            where: { id: { in: ids } },
+            select: { name: true, isAwin: true }
+        });
+        const mergedNames = mergedCats.map(c => c.name);
+        const awinNamesToMerge = mergedCats.filter(c => c.isAwin).map(c => c.name);
+        const result = await this.prisma.category.updateMany({
+            where: { id: { in: ids } },
+            data: { parentId, isAwin: false },
+        });
+        if (!parent.isAwin && awinNamesToMerge.length > 0) {
+            await this.prisma.product.updateMany({
+                where: {
+                    OR: [
+                        { category: { in: awinNamesToMerge } },
+                        { merchantCategory: { in: awinNamesToMerge } }
+                    ]
+                },
+                data: { category: parent.name }
+            });
+        }
+        return result;
     }
     async findOne(id) {
         const category = await this.prisma.category.findUnique({
@@ -180,11 +192,28 @@ let CategoryService = class CategoryService {
         return category;
     }
     async update(id, data) {
-        const updateData = { ...data };
+        const updateData = { ...data, isAwin: false };
         if (data.name) {
             updateData.slug = this.slugify(data.name);
         }
         this.clearCache();
+        if (data.parentId) {
+            const [category, parent] = await Promise.all([
+                this.prisma.category.findUnique({ where: { id } }),
+                this.prisma.category.findUnique({ where: { id: data.parentId } })
+            ]);
+            if (category && category.isAwin && parent && !parent.isAwin) {
+                await this.prisma.product.updateMany({
+                    where: {
+                        OR: [
+                            { category: category.name },
+                            { merchantCategory: category.name }
+                        ]
+                    },
+                    data: { category: parent.name }
+                });
+            }
+        }
         return this.prisma.category.update({
             where: { id },
             data: updateData,
@@ -193,17 +222,13 @@ let CategoryService = class CategoryService {
     }
     async remove(id) {
         this.clearCache();
-        return this.prisma.category.update({
-            where: { id },
-            data: { isDeleted: true }
+        return this.prisma.category.delete({
+            where: { id }
         });
     }
-    async restore(id) {
+    async removeAll() {
         this.clearCache();
-        return this.prisma.category.update({
-            where: { id },
-            data: { isDeleted: false }
-        });
+        return this.prisma.category.deleteMany({});
     }
     async syncAwinCategories() {
         const products = await this.prisma.product.findMany({
@@ -222,19 +247,27 @@ let CategoryService = class CategoryService {
             });
             if (!existing) {
                 const cat = await this.prisma.category.create({
-                    data: { name, slug, isAwin: true, isDeleted: false },
+                    data: { name, slug, isAwin: true },
                 });
                 created.push(cat);
             }
-            else if (!existing.isDeleted) {
-                const updateData = { isAwin: true };
+            else {
+                const updateData = {};
+                let needsUpdate = false;
+                if (!existing.isAwin && !existing.parentId) {
+                    updateData.isAwin = true;
+                    needsUpdate = true;
+                }
                 if (!existing.slug) {
                     updateData.slug = slug;
+                    needsUpdate = true;
                 }
-                await this.prisma.category.update({
-                    where: { id: existing.id },
-                    data: updateData,
-                });
+                if (needsUpdate) {
+                    await this.prisma.category.update({
+                        where: { id: existing.id },
+                        data: updateData,
+                    });
+                }
             }
         }
         this.clearCache();

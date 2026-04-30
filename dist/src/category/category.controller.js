@@ -23,11 +23,8 @@ let CategoryController = class CategoryController {
     create(data) {
         return this.categoryService.create(data);
     }
-    findAll(includeDeleted) {
-        return this.categoryService.findAll(includeDeleted === 'true');
-    }
-    restore(id) {
-        return this.categoryService.restore(id);
+    findAll() {
+        return this.categoryService.findAll();
     }
     findRoots() {
         return this.categoryService.findRoots();
@@ -44,11 +41,17 @@ let CategoryController = class CategoryController {
     findOne(id) {
         return this.categoryService.findOne(id);
     }
+    bulkLink(data) {
+        return this.categoryService.bulkLink(data.ids, data.parentId);
+    }
     update(id, data) {
         return this.categoryService.update(id, data);
     }
     remove(id) {
         return this.categoryService.remove(id);
+    }
+    removeAll() {
+        return this.categoryService.removeAll();
     }
 };
 exports.CategoryController = CategoryController;
@@ -61,18 +64,10 @@ __decorate([
 ], CategoryController.prototype, "create", null);
 __decorate([
     (0, common_1.Get)(),
-    __param(0, (0, common_1.Query)('includeDeleted')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "findAll", null);
-__decorate([
-    (0, common_1.Patch)(':id/restore'),
-    __param(0, (0, common_1.Param)('id')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", void 0)
-], CategoryController.prototype, "restore", null);
 __decorate([
     (0, common_1.Get)('roots'),
     __metadata("design:type", Function),
@@ -107,6 +102,13 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "findOne", null);
 __decorate([
+    (0, common_1.Patch)('bulk-link'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], CategoryController.prototype, "bulkLink", null);
+__decorate([
     (0, common_1.Patch)(':id'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
@@ -121,6 +123,12 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Delete)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], CategoryController.prototype, "removeAll", null);
 exports.CategoryController = CategoryController = __decorate([
     (0, common_1.Controller)('categories'),
     __metadata("design:paramtypes", [category_service_1.CategoryService])
