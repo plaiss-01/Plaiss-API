@@ -13,6 +13,10 @@ export declare class CategoryService {
     }): Promise<any>;
     findAll(includeDeleted?: boolean): Promise<any>;
     findRoots(): Promise<any>;
+    reorder(orders: {
+        id: string;
+        order: number;
+    }[]): Promise<any[]>;
     findOne(id: string): Promise<any>;
     findBySlug(slug: string): Promise<any>;
     update(id: string, data: {

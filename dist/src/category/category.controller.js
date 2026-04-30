@@ -32,6 +32,9 @@ let CategoryController = class CategoryController {
     findRoots() {
         return this.categoryService.findRoots();
     }
+    reorder(orders) {
+        return this.categoryService.reorder(orders);
+    }
     syncAwin() {
         return this.categoryService.syncAwinCategories();
     }
@@ -76,6 +79,13 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "findRoots", null);
+__decorate([
+    (0, common_1.Post)('reorder'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Array]),
+    __metadata("design:returntype", void 0)
+], CategoryController.prototype, "reorder", null);
 __decorate([
     (0, common_1.Post)('sync-awin'),
     __metadata("design:type", Function),

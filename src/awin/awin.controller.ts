@@ -245,27 +245,42 @@ export class AwinController {
       return total;
     };
 
-    const EXCLUDED_CATEGORIES = ['pet', 'skin', 'beauty', 'health', 'fragrance', 'jewelry'];
+    const buildHierarchy = (cat: any, visited = new Set<string>()) => {
+      if (visited.has(cat.id)) return null;
+      visited.add(cat.id);
+
+      const children = childrenMap.get(cat.id) || [];
+      return {
+        ...cat,
+        productCount: getDeepCount(cat.id),
+        children: children
+          .map((child) => buildHierarchy(child, visited))
+          .filter(Boolean),
+      };
+    };
+
+    const EXCLUDED_CATEGORIES = [
+      'pet',
+      'skin',
+      'beauty',
+      'health',
+      'fragrance',
+      'jewelry',
+    ];
 
     const roots = allCategories.filter((c: any) => !c.parentId);
-    const filteredRoots = roots.map((root: any) => {
-      const name = (root.name || '').toLowerCase();
-      if (EXCLUDED_CATEGORIES.some(ex => name.includes(ex))) return null;
+    const filteredRoots = roots
+      .map((root: any) => {
+        const name = (root.name || '').toLowerCase();
+        if (EXCLUDED_CATEGORIES.some((ex) => name.includes(ex))) return null;
 
-      const totalCount = getDeepCount(root.id);
-      if (totalCount > 0) {
-        const children = childrenMap.get(root.id) || [];
-        return {
-          ...root,
-          productCount: totalCount,
-          children: children.map(child => ({
-            ...child,
-            productCount: getDeepCount(child.id)
-          }))
-        };
-      }
-      return null;
-    }).filter(Boolean);
+        const totalCount = getDeepCount(root.id);
+        if (totalCount > 0) {
+          return buildHierarchy(root);
+        }
+        return null;
+      })
+      .filter(Boolean);
 
     return filteredRoots;
   }

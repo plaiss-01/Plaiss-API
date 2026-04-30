@@ -128,7 +128,7 @@ let CategoryService = class CategoryService {
                 },
                 parent: true,
             },
-            orderBy: { name: 'asc' },
+            orderBy: [{ order: 'asc' }, { name: 'asc' }],
         });
         if (!includeDeleted) {
             this.categoriesCache = { data, timestamp: now };
@@ -150,8 +150,16 @@ let CategoryService = class CategoryService {
                 },
                 parent: true,
             },
-            orderBy: { name: 'asc' },
+            orderBy: [{ order: 'asc' }, { name: 'asc' }],
         });
+    }
+    async reorder(orders) {
+        this.clearCache();
+        const updates = orders.map((item) => this.prisma.category.update({
+            where: { id: item.id },
+            data: { order: item.order },
+        }));
+        return Promise.all(updates);
     }
     async findOne(id) {
         const category = await this.prisma.category.findUnique({

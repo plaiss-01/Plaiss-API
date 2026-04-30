@@ -211,26 +211,40 @@ let AwinController = class AwinController {
             memo.set(catId, total);
             return total;
         };
-        const EXCLUDED_CATEGORIES = ['pet', 'skin', 'beauty', 'health', 'fragrance', 'jewelry'];
+        const buildHierarchy = (cat, visited = new Set()) => {
+            if (visited.has(cat.id))
+                return null;
+            visited.add(cat.id);
+            const children = childrenMap.get(cat.id) || [];
+            return {
+                ...cat,
+                productCount: getDeepCount(cat.id),
+                children: children
+                    .map((child) => buildHierarchy(child, visited))
+                    .filter(Boolean),
+            };
+        };
+        const EXCLUDED_CATEGORIES = [
+            'pet',
+            'skin',
+            'beauty',
+            'health',
+            'fragrance',
+            'jewelry',
+        ];
         const roots = allCategories.filter((c) => !c.parentId);
-        const filteredRoots = roots.map((root) => {
+        const filteredRoots = roots
+            .map((root) => {
             const name = (root.name || '').toLowerCase();
-            if (EXCLUDED_CATEGORIES.some(ex => name.includes(ex)))
+            if (EXCLUDED_CATEGORIES.some((ex) => name.includes(ex)))
                 return null;
             const totalCount = getDeepCount(root.id);
             if (totalCount > 0) {
-                const children = childrenMap.get(root.id) || [];
-                return {
-                    ...root,
-                    productCount: totalCount,
-                    children: children.map(child => ({
-                        ...child,
-                        productCount: getDeepCount(child.id)
-                    }))
-                };
+                return buildHierarchy(root);
             }
             return null;
-        }).filter(Boolean);
+        })
+            .filter(Boolean);
         return filteredRoots;
     }
     async getProductBySlug(slug) {

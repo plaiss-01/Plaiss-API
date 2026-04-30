@@ -141,7 +141,7 @@ export class CategoryService {
         },
         parent: true,
       },
-      orderBy: { name: 'asc' },
+      orderBy: [{ order: 'asc' }, { name: 'asc' }],
     });
 
     if (!includeDeleted) {
@@ -165,8 +165,19 @@ export class CategoryService {
         },
         parent: true,
       },
-      orderBy: { name: 'asc' },
+      orderBy: [{ order: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  async reorder(orders: { id: string; order: number }[]) {
+    this.clearCache();
+    const updates = orders.map((item) =>
+      (this.prisma as any).category.update({
+        where: { id: item.id },
+        data: { order: item.order },
+      }),
+    );
+    return Promise.all(updates);
   }
 
 

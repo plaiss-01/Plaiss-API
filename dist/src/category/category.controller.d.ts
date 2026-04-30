@@ -10,6 +10,10 @@ export declare class CategoryController {
     findAll(includeDeleted?: string): Promise<any>;
     restore(id: string): Promise<any>;
     findRoots(): Promise<any>;
+    reorder(orders: {
+        id: string;
+        order: number;
+    }[]): Promise<any[]>;
     syncAwin(): Promise<{
         message: string;
         newlyCreated: number;

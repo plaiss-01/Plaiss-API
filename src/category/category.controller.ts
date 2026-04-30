@@ -35,6 +35,11 @@ export class CategoryController {
   }
 
 
+  @Post('reorder')
+  reorder(@Body() orders: { id: string; order: number }[]) {
+    return this.categoryService.reorder(orders);
+  }
+
   @Post('sync-awin')
   syncAwin() {
     return this.categoryService.syncAwinCategories();
