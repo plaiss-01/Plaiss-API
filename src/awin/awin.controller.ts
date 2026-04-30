@@ -195,6 +195,19 @@ export class AwinController {
     
     return result;
   }
+  
+  @Get('merchants')
+  @ApiOperation({ summary: 'Get all unique merchants from products' })
+  async getMerchants() {
+    const merchants = await this.prisma.product.findMany({
+      distinct: ['merchant'],
+      select: { merchant: true },
+    });
+    return merchants
+      .map(m => m.merchant)
+      .filter(Boolean)
+      .sort((a, b) => a!.localeCompare(b!));
+  }
 
   @Get('categories')
   @ApiOperation({ summary: 'Get all unique product categories with products' })
@@ -318,6 +331,21 @@ export class AwinController {
   @ApiOperation({ summary: 'Delete a product' })
   @ApiResponse({ status: 200, description: 'The product has been successfully deleted.' })
   async deleteProduct(@Param('id') id: string) {
-    return this.prisma.product.delete({ where: { id } });
+    const result = await this.prisma.product.delete({ where: { id } });
+    this.productsCache.clear(); // Clear cache to reflect deletion
+    return result;
+  }
+
+  @Delete('products/by-merchant/:merchantName')
+  @ApiOperation({ summary: 'Delete all products from a specific merchant' })
+  @ApiResponse({ status: 200, description: 'All products from the merchant have been deleted.' })
+  async deleteProductsByMerchant(@Param('merchantName') merchantName: string) {
+    const result = await this.prisma.product.deleteMany({
+      where: {
+        merchant: { equals: merchantName, mode: 'insensitive' }
+      }
+    });
+    this.productsCache.clear(); // Clear cache to reflect deletions
+    return result;
   }
 }

@@ -170,6 +170,16 @@ let AwinController = class AwinController {
         }
         return result;
     }
+    async getMerchants() {
+        const merchants = await this.prisma.product.findMany({
+            distinct: ['merchant'],
+            select: { merchant: true },
+        });
+        return merchants
+            .map(m => m.merchant)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+    }
     async getCategories() {
         const allCategories = await this.categoryService.findAll();
         const categoryMap = new Map();
@@ -265,7 +275,18 @@ let AwinController = class AwinController {
         });
     }
     async deleteProduct(id) {
-        return this.prisma.product.delete({ where: { id } });
+        const result = await this.prisma.product.delete({ where: { id } });
+        this.productsCache.clear();
+        return result;
+    }
+    async deleteProductsByMerchant(merchantName) {
+        const result = await this.prisma.product.deleteMany({
+            where: {
+                merchant: { equals: merchantName, mode: 'insensitive' }
+            }
+        });
+        this.productsCache.clear();
+        return result;
     }
 };
 exports.AwinController = AwinController;
@@ -307,6 +328,13 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
+__decorate([
+    (0, common_1.Get)('merchants'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all unique merchants from products' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "getMerchants", null);
 __decorate([
     (0, common_1.Get)('categories'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all unique product categories with products' }),
@@ -351,6 +379,15 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "deleteProduct", null);
+__decorate([
+    (0, common_1.Delete)('products/by-merchant/:merchantName'),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete all products from a specific merchant' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'All products from the merchant have been deleted.' }),
+    __param(0, (0, common_1.Param)('merchantName')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "deleteProductsByMerchant", null);
 exports.AwinController = AwinController = __decorate([
     (0, swagger_1.ApiTags)('awin'),
     (0, common_1.Controller)('awin'),

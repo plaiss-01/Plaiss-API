@@ -26,6 +26,7 @@ export declare class AwinController {
         timestamp: number;
     } | undefined>;
     getAllProducts(page?: string, limit?: string, category?: string, subs?: string): Promise<any>;
+    getMerchants(): Promise<(string | null)[]>;
     getCategories(): Promise<any>;
     getProductBySlug(slug: string): Promise<{
         id: string;
@@ -391,4 +392,5 @@ export declare class AwinController {
         createdAt: Date;
         updatedAt: Date;
     }>;
+    deleteProductsByMerchant(merchantName: string): Promise<import("@prisma/client").Prisma.BatchPayload>;
 }
