@@ -56,6 +56,14 @@ export class CategoryController {
   }
 
   @Patch('force-update/:id')
+  async forceUpdate(
+    @Param('id') id: string,
+    @Body() data: any
+  ) {
+    return this.categoryService.update(id, data);
+  }
+
+  @Patch(':id')
   async update(
     @Param('id') id: string,
     @Body() data: any

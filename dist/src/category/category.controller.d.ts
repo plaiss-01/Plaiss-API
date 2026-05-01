@@ -23,6 +23,10 @@ export declare class CategoryController {
         ids: string[];
         parentId: string;
     }): Promise<any>;
+    forceUpdate(id: string, data: any): Promise<{
+        id: string;
+        success: boolean;
+    }>;
     update(id: string, data: any): Promise<{
         id: string;
         success: boolean;
