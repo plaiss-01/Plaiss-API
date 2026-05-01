@@ -7,7 +7,7 @@ export declare class CategoryController {
         parentId?: string;
         isAwin?: boolean;
     }): Promise<any>;
-    findAll(): Promise<any>;
+    findAll(isAwin?: string, search?: string, limit?: string): Promise<any>;
     findRoots(): Promise<any>;
     reorder(orders: {
         id: string;
@@ -24,12 +24,22 @@ export declare class CategoryController {
         parentId: string;
     }): Promise<any>;
     forceUpdate(id: string, data: any): Promise<{
+        id: any;
+        merged: boolean;
+        success: boolean;
+    } | {
         id: string;
         success: boolean;
+        merged?: undefined;
     }>;
     update(id: string, data: any): Promise<{
+        id: any;
+        merged: boolean;
+        success: boolean;
+    } | {
         id: string;
         success: boolean;
+        merged?: undefined;
     }>;
     remove(id: string): Promise<any>;
     removeAll(): Promise<any>;

@@ -20,8 +20,14 @@ export class CategoryController {
   }
 
   @Get()
-  findAll() {
-    return this.categoryService.findAll();
+  findAll(
+    @Query('isAwin') isAwin?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string
+  ) {
+    const isAwinBool = isAwin === 'true' ? true : isAwin === 'false' ? false : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : 1000;
+    return this.categoryService.findAll(isAwinBool, search, limitNum);
   }
 
   @Get('roots')

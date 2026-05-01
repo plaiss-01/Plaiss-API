@@ -9,7 +9,7 @@ export declare class CategoryService {
         parentId?: string;
         isAwin?: boolean;
     }): Promise<any>;
-    findAll(): Promise<any>;
+    findAll(isAwin?: boolean, search?: string, limit?: number): Promise<any>;
     findRoots(): Promise<any>;
     reorder(orders: {
         id: string;
@@ -19,8 +19,13 @@ export declare class CategoryService {
     findOne(id: string): Promise<any>;
     findBySlug(slug: string): Promise<any>;
     update(id: string, data: any): Promise<{
+        id: any;
+        merged: boolean;
+        success: boolean;
+    } | {
         id: string;
         success: boolean;
+        merged?: undefined;
     }>;
     remove(id: string): Promise<any>;
     removeAll(): Promise<any>;

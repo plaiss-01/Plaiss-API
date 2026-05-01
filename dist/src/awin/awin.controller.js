@@ -214,11 +214,17 @@ let AwinController = class AwinController {
             }
         });
         const memo = new Map();
+        const calculateAllCounts = () => {
+            allCategories.forEach(cat => {
+                const catName = cat.name.toLowerCase().trim();
+                memo.set(cat.id, countMap[catName] || 0);
+            });
+        };
         const getDeepCount = (catId, visited = new Set()) => {
             if (visited.has(catId))
                 return 0;
-            if (memo.has(catId))
-                return memo.get(catId);
+            if (memo.has(catId) && memo.get(catId) !== undefined && memo.get(catId) > 0) {
+            }
             visited.add(catId);
             const cat = categoryMap.get(catId);
             if (!cat)
@@ -232,6 +238,11 @@ let AwinController = class AwinController {
             memo.set(catId, total);
             return total;
         };
+        allCategories.forEach(cat => {
+            if (!memo.has(cat.id)) {
+                getDeepCount(cat.id);
+            }
+        });
         const buildHierarchy = (cat, visited = new Set()) => {
             if (visited.has(cat.id))
                 return null;

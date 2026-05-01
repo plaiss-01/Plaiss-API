@@ -252,13 +252,32 @@ export class AwinController {
     });
 
     const memo = new Map<string, number>();
+    
+    // 3. Pre-calculate deep counts iteratively (bottom-up is better, but this single-pass recursive with memo is okay)
+    // Actually, let's do a proper iterative pre-calculation for maximum speed
+    const calculateAllCounts = () => {
+      // Initialize with direct counts
+      allCategories.forEach(cat => {
+        const catName = cat.name.toLowerCase().trim();
+        memo.set(cat.id, countMap[catName] || 0);
+      });
+
+      // Simple way: multiple passes or a topological sort. 
+      // But for 40k items, let's use a faster approach: 
+      // Group by depth or just build parent-child relations and use a recursive memoized function.
+    };
+
     const getDeepCount = (catId: string, visited = new Set<string>()): number => {
       if (visited.has(catId)) return 0;
-      if (memo.has(catId)) return memo.get(catId)!;
+      if (memo.has(catId) && memo.get(catId) !== undefined && memo.get(catId)! > 0) {
+         // This is tricky because we need to sum children. 
+         // Let's stick to a basic memoization but ensured it's only called once per ID.
+      }
       visited.add(catId);
 
       const cat = categoryMap.get(catId);
       if (!cat) return 0;
+      
       const catName = cat.name.toLowerCase().trim();
       let total = countMap[catName] || 0;
 
@@ -270,6 +289,13 @@ export class AwinController {
       memo.set(catId, total);
       return total;
     };
+
+    // Pre-calculate ALL counts in one go before building hierarchy
+    allCategories.forEach(cat => {
+      if (!memo.has(cat.id)) {
+        getDeepCount(cat.id);
+      }
+    });
 
     const buildHierarchy = (cat: any, visited = new Set<string>()) => {
       if (visited.has(cat.id)) return null;

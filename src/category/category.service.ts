@@ -125,13 +125,26 @@ export class CategoryService {
     }
   }
 
-  async findAll() {
+  async findAll(isAwin?: boolean, search?: string, limit: number = 1000) {
+    const where: any = {};
+    if (isAwin !== undefined) {
+      where.isAwin = isAwin;
+    }
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { slug: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
     return (this.prisma as any).category.findMany({
+      where,
       include: {
         children: true,
         parent: true,
       },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
+      take: limit, // Prevent massive memory consumption
     });
   }
 
@@ -223,36 +236,101 @@ export class CategoryService {
     this.clearCache();
 
     try {
+      console.log(`[CategoryService] Updating category ${id}`, data);
+      
+      // 1. Verify the category exists first to avoid P2025
+      const currentCategory = await (this.prisma as any).category.findUnique({
+        where: { id },
+      });
+
+      if (!currentCategory) {
+        throw new NotFoundException(`Category with ID ${id} not found`);
+      }
+
+      // Handle isMerged flag
       if (data.isMerged !== undefined) {
         const boolVal = data.isMerged === true || data.isMerged === 'true';
-        // Use direct string interpolation for the boolean to be extra safe
-        await (this.prisma as any).$executeRawUnsafe(
-          `UPDATE "Category" SET "isMerged" = ${boolVal} WHERE id = '${id}'`
-        );
+        await (this.prisma as any).category.update({
+          where: { id },
+          data: { isMerged: boolVal }
+        });
       }
 
       if (data.name || data.parentId !== undefined) {
         const prismaUpdate: any = {};
-        if (data.name) {
-          prismaUpdate.name = data.name;
-          prismaUpdate.slug = this.slugify(data.name);
+        
+        if (data.name && data.name !== currentCategory.name) {
+          const newName = data.name;
+          const newSlug = this.slugify(newName);
+
+          // Check if another category already has this name or slug
+          const existing = await (this.prisma as any).category.findFirst({
+            where: {
+              OR: [{ name: newName }, { slug: newSlug }],
+              NOT: { id: id }
+            }
+          });
+
+          if (existing) {
+            // MERGE LOGIC: If renaming to an existing category, move children and products
+            console.log(`Merging category "${currentCategory.name}" into existing category "${existing.name}"`);
+            
+            // Move children
+            await (this.prisma as any).category.updateMany({
+              where: { parentId: id },
+              data: { parentId: existing.id }
+            });
+
+            // Update products that reference this category name
+            await this.prisma.product.updateMany({
+              where: {
+                OR: [
+                  { category: currentCategory.name },
+                  { merchantCategory: currentCategory.name }
+                ]
+              },
+              data: { category: existing.name }
+            });
+
+            // Delete the "duplicate" category
+            await (this.prisma as any).category.delete({
+              where: { id }
+            });
+
+            // IMPORTANT: If merging into an Awin category, flip it to manual so it stays visible
+            if (existing.isAwin) {
+              await (this.prisma as any).category.update({
+                where: { id: existing.id },
+                data: { isAwin: false }
+              });
+            }
+
+            return { id: existing.id, merged: true, success: true };
+          }
+
+          prismaUpdate.name = newName;
+          prismaUpdate.slug = newSlug;
           prismaUpdate.isAwin = false;
         }
+
         if (data.parentId !== undefined) {
           prismaUpdate.parentId = data.parentId;
         }
 
-        await (this.prisma as any).category.update({
-          where: { id },
-          data: prismaUpdate,
-        });
+        if (Object.keys(prismaUpdate).length > 0) {
+          await (this.prisma as any).category.update({
+            where: { id },
+            data: prismaUpdate,
+          });
+        }
       }
 
-      // Return a minimal object instead of calling findOne
       return { id, success: true };
     } catch (error) {
+      if (error.code === 'P2002') {
+        throw new ConflictException('A category with this name or slug already exists');
+      }
       console.error('Category update error:', error);
-      // Return a descriptive error if possible (though Nest will catch it)
       throw error;
     }
   }

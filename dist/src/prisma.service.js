@@ -24,7 +24,15 @@ let PrismaService = PrismaService_1 = class PrismaService extends client_1.Prism
         if (!url || (!url.startsWith('postgresql://') && !url.startsWith('postgres://'))) {
             throw new Error('DATABASE_URL must be a valid PostgreSQL connection string.');
         }
-        const pool = new pg_1.Pool({ connectionString: url });
+        const pool = new pg_1.Pool({
+            connectionString: url,
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 2000,
+        });
+        pool.on('error', (err) => {
+            this.logger.error('Unexpected error on idle client', err);
+        });
         const adapter = new adapter_pg_1.PrismaPg(pool);
         super({ adapter, log: logOptions });
         this.logger = new common_1.Logger(PrismaService_1.name);
