@@ -272,17 +272,15 @@ let AwinService = AwinService_1 = class AwinService {
             description: getVal(['description', 'product_description']),
             price: parseFloat(getVal(['search_price', 'price'])) || 0,
             currency: getVal(['currency']),
-            imageUrl: getVal([
-                'merchant_image_url',
+            imageUrl: (getVal([
                 'aw_image_url',
-                'image_url',
                 'large_image',
+                'merchant_image_url',
+                'image_url',
                 'alternate_image',
                 'image',
                 'aw_thumb_url'
-            ])?.includes('noimage.gif')
-                ? (getVal(['large_image', 'alternate_image', 'merchant_image_url']) || '')
-                : (getVal(['merchant_image_url', 'aw_image_url', 'image_url', 'large_image', 'alternate_image', 'image']) || ''),
+            ]) || '').replace('http://', 'https://'),
             productUrl: getVal(['aw_deep_link', 'product_url', 'url']),
             merchant: getVal(['merchant_name', 'merchant', 'store_name']),
             category: finalCategory,
