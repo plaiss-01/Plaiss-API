@@ -259,6 +259,9 @@ let AwinController = class AwinController {
             const name = (root.name || '').toLowerCase();
             if (EXCLUDED_CATEGORIES.some((ex) => name.includes(ex)))
                 return null;
+            if (!root.isAwin) {
+                return buildHierarchy(root);
+            }
             const totalCount = getDeepCount(root.id);
             if (totalCount > 0) {
                 return buildHierarchy(root);

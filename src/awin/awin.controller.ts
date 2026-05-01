@@ -300,6 +300,12 @@ export class AwinController {
         const name = (root.name || '').toLowerCase();
         if (EXCLUDED_CATEGORIES.some((ex) => name.includes(ex))) return null;
 
+        // Always show manual (user-created) categories, even with 0 products
+        if (!root.isAwin) {
+          return buildHierarchy(root);
+        }
+
+        // For Awin-sourced root categories, only show if they have products
         const totalCount = getDeepCount(root.id);
         if (totalCount > 0) {
           return buildHierarchy(root);
