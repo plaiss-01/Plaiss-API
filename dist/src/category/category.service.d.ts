@@ -20,10 +20,10 @@ export declare class CategoryService {
     bulkLink(ids: string[], parentId: string): Promise<any>;
     findOne(id: string): Promise<any>;
     findBySlug(slug: string): Promise<any>;
-    update(id: string, data: {
-        name?: string;
-        parentId?: string | null;
-    }): Promise<any>;
+    update(id: string, data: any): Promise<{
+        id: string;
+        success: boolean;
+    }>;
     remove(id: string): Promise<any>;
     removeAll(): Promise<any>;
     syncAwinCategories(): Promise<{

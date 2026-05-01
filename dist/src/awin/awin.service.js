@@ -257,17 +257,6 @@ let AwinService = AwinService_1 = class AwinService {
         const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
         const categoryPath = rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']);
         let finalCategory = this.extractLeafCategory(categoryPath);
-        if (categoryPath && categoryPath !== 'collection') {
-            try {
-                const createdCat = await this.categoryService.create({ name: categoryPath, isAwin: true });
-                if (createdCat) {
-                    finalCategory = createdCat.name;
-                }
-            }
-            catch (err) {
-                this.logger.error(`Failed to auto-create category ${categoryPath}: ${err.message}`);
-            }
-        }
         if (finalCategory) {
             const catRecord = await this.prisma.category.findFirst({
                 where: { name: { equals: finalCategory, mode: 'insensitive' } },
@@ -283,7 +272,17 @@ let AwinService = AwinService_1 = class AwinService {
             description: getVal(['description', 'product_description']),
             price: parseFloat(getVal(['search_price', 'price'])) || 0,
             currency: getVal(['currency']),
-            imageUrl: getVal(['merchant_image_url', 'aw_image_url', 'image_url', 'image']),
+            imageUrl: getVal([
+                'merchant_image_url',
+                'aw_image_url',
+                'image_url',
+                'large_image',
+                'alternate_image',
+                'image',
+                'aw_thumb_url'
+            ])?.includes('noimage.gif')
+                ? (getVal(['large_image', 'alternate_image', 'merchant_image_url']) || '')
+                : (getVal(['merchant_image_url', 'aw_image_url', 'image_url', 'large_image', 'alternate_image', 'image']) || ''),
             productUrl: getVal(['aw_deep_link', 'product_url', 'url']),
             merchant: getVal(['merchant_name', 'merchant', 'store_name']),
             category: finalCategory,

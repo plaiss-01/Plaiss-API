@@ -47,6 +47,16 @@ export class CategoryService {
             },
             include: { children: true, parent: true }
           });
+        } else {
+          // If it exists but was an Awin category, and we are now manually creating/using it,
+          // flip it to a manual category so it shows in the UI.
+          if (category.isAwin && data.isAwin !== true) {
+            category = await (this.prisma as any).category.update({
+              where: { id: category.id },
+              data: { isAwin: false },
+              include: { children: true, parent: true }
+            });
+          }
         }
 
 
@@ -219,39 +229,42 @@ export class CategoryService {
     return category;
   }
 
-  async update(id: string, data: { name?: string; parentId?: string | null }) {
-    const updateData: any = { ...data, isAwin: false };
-    if (data.name) {
-      updateData.slug = this.slugify(data.name);
-    }
-
+  async update(id: string, data: any) {
     this.clearCache();
 
-    // If we are linking to a parent, handle product merging
-    if (data.parentId) {
-      const [category, parent] = await Promise.all([
-        (this.prisma as any).category.findUnique({ where: { id } }),
-        (this.prisma as any).category.findUnique({ where: { id: data.parentId } })
-      ]);
+    try {
+      if (data.isMerged !== undefined) {
+        const boolVal = data.isMerged === true || data.isMerged === 'true';
+        // Use direct string interpolation for the boolean to be extra safe
+        await (this.prisma as any).$executeRawUnsafe(
+          `UPDATE "Category" SET "isMerged" = ${boolVal} WHERE id = '${id}'`
+        );
+      }
 
-      if (category && category.isAwin && parent && !parent.isAwin) {
-        await this.prisma.product.updateMany({
-          where: {
-            OR: [
-              { category: category.name },
-              { merchantCategory: category.name }
-            ]
-          },
-          data: { category: parent.name }
+      if (data.name || data.parentId !== undefined) {
+        const prismaUpdate: any = {};
+        if (data.name) {
+          prismaUpdate.name = data.name;
+          prismaUpdate.slug = this.slugify(data.name);
+          prismaUpdate.isAwin = false;
+        }
+        if (data.parentId !== undefined) {
+          prismaUpdate.parentId = data.parentId;
+        }
+
+        await (this.prisma as any).category.update({
+          where: { id },
+          data: prismaUpdate,
         });
       }
-    }
 
-    return (this.prisma as any).category.update({
-      where: { id },
-      data: updateData,
-      include: { children: true, parent: true },
-    });
+      // Return a minimal object instead of calling findOne
+      return { id, success: true };
+    } catch (error) {
+      console.error('Category update error:', error);
+      // Return a descriptive error if possible (though Nest will catch it)
+      throw error;
+    }
   }
 
   async remove(id: string) {
@@ -295,13 +308,8 @@ export class CategoryService {
         const updateData: any = {};
         let needsUpdate = false;
 
-        // If it exists but is NOT yet marked as Awin, and it's a root category 
-        // (no parent), we can safely mark it as Awin so it moves to the 
-        // sub-item management pool instead of the main list.
-        if (!existing.isAwin && !existing.parentId) {
-          updateData.isAwin = true;
-          needsUpdate = true;
-        }
+        // We should NEVER overwrite a manual category (isAwin: false) 
+        // to become an Awin category during sync. Manual takes precedence.
 
         if (!existing.slug) {
           updateData.slug = slug;

@@ -244,19 +244,7 @@ export class AwinService {
     const categoryPath = rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']);
     let finalCategory = this.extractLeafCategory(categoryPath);
 
-    // 1. Ensure the category (and its hierarchy) exists in our Category table
-    if (categoryPath && categoryPath !== 'collection') {
-      try {
-        const createdCat = await this.categoryService.create({ name: categoryPath, isAwin: true });
-        if (createdCat) {
-          finalCategory = createdCat.name;
-        }
-      } catch (err) {
-        this.logger.error(`Failed to auto-create category ${categoryPath}: ${err.message}`);
-      }
-    }
-
-    // 2. Category Merging Logic: 
+    // 1. Category Merging Logic: 
     // If this Awin category is linked as a sub-item to a MANUAL category,
     // we use the Manual category name instead of the raw Awin name.
     if (finalCategory) {
@@ -276,7 +264,17 @@ export class AwinService {
       description: getVal(['description', 'product_description']),
       price: parseFloat(getVal(['search_price', 'price'])) || 0,
       currency: getVal(['currency']),
-      imageUrl: getVal(['merchant_image_url', 'aw_image_url', 'image_url', 'image']),
+      imageUrl: getVal([
+        'merchant_image_url', 
+        'aw_image_url', 
+        'image_url', 
+        'large_image', 
+        'alternate_image', 
+        'image',
+        'aw_thumb_url'
+      ])?.includes('noimage.gif') 
+        ? (getVal(['large_image', 'alternate_image', 'merchant_image_url']) || '') 
+        : (getVal(['merchant_image_url', 'aw_image_url', 'image_url', 'large_image', 'alternate_image', 'image']) || ''),
       productUrl: getVal(['aw_deep_link', 'product_url', 'url']),
       merchant: getVal(['merchant_name', 'merchant', 'store_name']),
       category: finalCategory,

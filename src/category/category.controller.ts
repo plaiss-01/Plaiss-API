@@ -55,10 +55,10 @@ export class CategoryController {
     return this.categoryService.bulkLink(data.ids, data.parentId);
   }
 
-  @Patch(':id')
-  update(
+  @Patch('force-update/:id')
+  async update(
     @Param('id') id: string,
-    @Body() data: { name?: string; parentId?: string | null }
+    @Body() data: any
   ) {
     return this.categoryService.update(id, data);
   }

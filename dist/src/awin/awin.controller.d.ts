@@ -116,7 +116,6 @@ export declare class AwinController {
         parentProductId: string | null;
         productGTIN: string | null;
         basketLink: string | null;
-        isDeleted: boolean;
         createdAt: Date;
         updatedAt: Date;
     } | null>;
@@ -208,7 +207,6 @@ export declare class AwinController {
         parentProductId: string | null;
         productGTIN: string | null;
         basketLink: string | null;
-        isDeleted: boolean;
         createdAt: Date;
         updatedAt: Date;
     } | null>;
@@ -300,7 +298,6 @@ export declare class AwinController {
         parentProductId: string | null;
         productGTIN: string | null;
         basketLink: string | null;
-        isDeleted: boolean;
         createdAt: Date;
         updatedAt: Date;
     }>;
@@ -392,7 +389,6 @@ export declare class AwinController {
         parentProductId: string | null;
         productGTIN: string | null;
         basketLink: string | null;
-        isDeleted: boolean;
         createdAt: Date;
         updatedAt: Date;
     }>;

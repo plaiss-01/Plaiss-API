@@ -23,10 +23,10 @@ export declare class CategoryController {
         ids: string[];
         parentId: string;
     }): Promise<any>;
-    update(id: string, data: {
-        name?: string;
-        parentId?: string | null;
-    }): Promise<any>;
+    update(id: string, data: any): Promise<{
+        id: string;
+        success: boolean;
+    }>;
     remove(id: string): Promise<any>;
     removeAll(): Promise<any>;
 }

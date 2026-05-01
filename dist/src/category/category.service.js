@@ -52,6 +52,15 @@ let CategoryService = class CategoryService {
                         include: { children: true, parent: true }
                     });
                 }
+                else {
+                    if (category.isAwin && data.isAwin !== true) {
+                        category = await this.prisma.category.update({
+                            where: { id: category.id },
+                            data: { isAwin: false },
+                            include: { children: true, parent: true }
+                        });
+                    }
+                }
                 currentParentId = category.id;
                 lastCreated = category;
             }
@@ -192,33 +201,33 @@ let CategoryService = class CategoryService {
         return category;
     }
     async update(id, data) {
-        const updateData = { ...data, isAwin: false };
-        if (data.name) {
-            updateData.slug = this.slugify(data.name);
-        }
         this.clearCache();
-        if (data.parentId) {
-            const [category, parent] = await Promise.all([
-                this.prisma.category.findUnique({ where: { id } }),
-                this.prisma.category.findUnique({ where: { id: data.parentId } })
-            ]);
-            if (category && category.isAwin && parent && !parent.isAwin) {
-                await this.prisma.product.updateMany({
-                    where: {
-                        OR: [
-                            { category: category.name },
-                            { merchantCategory: category.name }
-                        ]
-                    },
-                    data: { category: parent.name }
+        try {
+            if (data.isMerged !== undefined) {
+                const boolVal = data.isMerged === true || data.isMerged === 'true';
+                await this.prisma.$executeRawUnsafe(`UPDATE "Category" SET "isMerged" = ${boolVal} WHERE id = '${id}'`);
+            }
+            if (data.name || data.parentId !== undefined) {
+                const prismaUpdate = {};
+                if (data.name) {
+                    prismaUpdate.name = data.name;
+                    prismaUpdate.slug = this.slugify(data.name);
+                    prismaUpdate.isAwin = false;
+                }
+                if (data.parentId !== undefined) {
+                    prismaUpdate.parentId = data.parentId;
+                }
+                await this.prisma.category.update({
+                    where: { id },
+                    data: prismaUpdate,
                 });
             }
+            return { id, success: true };
         }
-        return this.prisma.category.update({
-            where: { id },
-            data: updateData,
-            include: { children: true, parent: true },
-        });
+        catch (error) {
+            console.error('Category update error:', error);
+            throw error;
+        }
     }
     async remove(id) {
         this.clearCache();
@@ -254,10 +263,6 @@ let CategoryService = class CategoryService {
             else {
                 const updateData = {};
                 let needsUpdate = false;
-                if (!existing.isAwin && !existing.parentId) {
-                    updateData.isAwin = true;
-                    needsUpdate = true;
-                }
                 if (!existing.slug) {
                     updateData.slug = slug;
                     needsUpdate = true;

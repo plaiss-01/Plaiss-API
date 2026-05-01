@@ -44,7 +44,7 @@ let CategoryController = class CategoryController {
     bulkLink(data) {
         return this.categoryService.bulkLink(data.ids, data.parentId);
     }
-    update(id, data) {
+    async update(id, data) {
         return this.categoryService.update(id, data);
     }
     remove(id) {
@@ -109,12 +109,12 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "bulkLink", null);
 __decorate([
-    (0, common_1.Patch)(':id'),
+    (0, common_1.Patch)('force-update/:id'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], CategoryController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':id'),
