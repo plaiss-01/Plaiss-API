@@ -5,11 +5,9 @@ import { PrismaService } from '../prisma.service';
 export class CategoryService {
   constructor(private readonly prisma: PrismaService) { }
 
-  private categoriesCache: { data: any[], timestamp: number } | null = null;
-  private readonly CACHE_TTL = 60000;
-
+  // Cache removed: with multiple EKS pods, per-pod caches cause stale data bugs.
   clearCache() {
-    this.categoriesCache = null;
+    // no-op — kept for call-site compatibility
   }
 
   private slugify(text: string) {
@@ -128,21 +126,13 @@ export class CategoryService {
   }
 
   async findAll() {
-    const now = Date.now();
-    if (this.categoriesCache && (now - this.categoriesCache.timestamp < this.CACHE_TTL)) {
-      return this.categoriesCache.data;
-    }
-
-    const data = await (this.prisma as any).category.findMany({
+    return (this.prisma as any).category.findMany({
       include: {
         children: true,
         parent: true,
       },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
     });
-
-    this.categoriesCache = { data, timestamp: now };
-    return data;
   }
 
   async findRoots() {

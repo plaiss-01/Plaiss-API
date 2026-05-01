@@ -29,10 +29,10 @@ export declare class AwinController {
     getMerchants(): Promise<(string | null)[]>;
     getCategories(): Promise<any>;
     getProductBySlug(slug: string): Promise<{
-        id: string;
-        awinId: string | null;
         name: string;
         slug: string | null;
+        id: string;
+        awinId: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
@@ -120,10 +120,10 @@ export declare class AwinController {
         updatedAt: Date;
     } | null>;
     getProductById(id: string): Promise<{
-        id: string;
-        awinId: string | null;
         name: string;
         slug: string | null;
+        id: string;
+        awinId: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
@@ -211,10 +211,10 @@ export declare class AwinController {
         updatedAt: Date;
     } | null>;
     updateProduct(id: string, updateProductDto: UpdateProductDto): Promise<{
-        id: string;
-        awinId: string | null;
         name: string;
         slug: string | null;
+        id: string;
+        awinId: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
@@ -302,10 +302,10 @@ export declare class AwinController {
         updatedAt: Date;
     }>;
     deleteProduct(id: string): Promise<{
-        id: string;
-        awinId: string | null;
         name: string;
         slug: string | null;
+        id: string;
+        awinId: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;

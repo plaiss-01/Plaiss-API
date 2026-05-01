@@ -17,10 +17,7 @@ let CategoryService = class CategoryService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    categoriesCache = null;
-    CACHE_TTL = 60000;
     clearCache() {
-        this.categoriesCache = null;
     }
     slugify(text) {
         return text
@@ -117,19 +114,13 @@ let CategoryService = class CategoryService {
         }
     }
     async findAll() {
-        const now = Date.now();
-        if (this.categoriesCache && (now - this.categoriesCache.timestamp < this.CACHE_TTL)) {
-            return this.categoriesCache.data;
-        }
-        const data = await this.prisma.category.findMany({
+        return this.prisma.category.findMany({
             include: {
                 children: true,
                 parent: true,
             },
             orderBy: [{ order: 'asc' }, { name: 'asc' }],
         });
-        this.categoriesCache = { data, timestamp: now };
-        return data;
     }
     async findRoots() {
         return this.prisma.category.findMany({
