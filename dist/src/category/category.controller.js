@@ -23,10 +23,10 @@ let CategoryController = class CategoryController {
     create(data) {
         return this.categoryService.create(data);
     }
-    findAll(isAwin, search, limit) {
+    findAll(isAwin, search, limit, parentId) {
         const isAwinBool = isAwin === 'true' ? true : isAwin === 'false' ? false : undefined;
         const limitNum = limit ? parseInt(limit, 10) : 1000;
-        return this.categoryService.findAll(isAwinBool, search, limitNum);
+        return this.categoryService.findAll(isAwinBool, search, limitNum, parentId);
     }
     findRoots() {
         return this.categoryService.findRoots();
@@ -72,8 +72,9 @@ __decorate([
     __param(0, (0, common_1.Query)('isAwin')),
     __param(1, (0, common_1.Query)('search')),
     __param(2, (0, common_1.Query)('limit')),
+    __param(3, (0, common_1.Query)('parentId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", void 0)
 ], CategoryController.prototype, "findAll", null);
 __decorate([

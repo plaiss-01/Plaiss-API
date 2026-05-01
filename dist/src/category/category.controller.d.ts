@@ -7,7 +7,7 @@ export declare class CategoryController {
         parentId?: string;
         isAwin?: boolean;
     }): Promise<any>;
-    findAll(isAwin?: string, search?: string, limit?: string): Promise<any>;
+    findAll(isAwin?: string, search?: string, limit?: string, parentId?: string): Promise<any>;
     findRoots(): Promise<any>;
     reorder(orders: {
         id: string;

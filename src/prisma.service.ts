@@ -20,7 +20,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       connectionString: url,
       max: 20, // Limit maximum connections
       idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-      connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection cannot be established
+      connectionTimeoutMillis: 30000, // Return an error after 30 seconds if connection cannot be established
+      keepAlive: true, // Help keep the connection alive
     });
 
     // Add error handler to pool to prevent process crashes on unexpected disconnects

@@ -125,10 +125,13 @@ export class CategoryService {
     }
   }
 
-  async findAll(isAwin?: boolean, search?: string, limit: number = 1000) {
+  async findAll(isAwin?: boolean, search?: string, limit: number = 1000, parentId?: string | null) {
     const where: any = {};
     if (isAwin !== undefined) {
       where.isAwin = isAwin;
+    }
+    if (parentId !== undefined) {
+      where.parentId = parentId === 'null' ? null : parentId;
     }
     if (search) {
       where.OR = [

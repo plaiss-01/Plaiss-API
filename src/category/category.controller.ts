@@ -23,11 +23,12 @@ export class CategoryController {
   findAll(
     @Query('isAwin') isAwin?: string,
     @Query('search') search?: string,
-    @Query('limit') limit?: string
+    @Query('limit') limit?: string,
+    @Query('parentId') parentId?: string
   ) {
     const isAwinBool = isAwin === 'true' ? true : isAwin === 'false' ? false : undefined;
     const limitNum = limit ? parseInt(limit, 10) : 1000;
-    return this.categoryService.findAll(isAwinBool, search, limitNum);
+    return this.categoryService.findAll(isAwinBool, search, limitNum, parentId);
   }
 
   @Get('roots')

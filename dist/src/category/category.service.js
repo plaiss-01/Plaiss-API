@@ -113,10 +113,13 @@ let CategoryService = class CategoryService {
             throw error;
         }
     }
-    async findAll(isAwin, search, limit = 1000) {
+    async findAll(isAwin, search, limit = 1000, parentId) {
         const where = {};
         if (isAwin !== undefined) {
             where.isAwin = isAwin;
+        }
+        if (parentId !== undefined) {
+            where.parentId = parentId === 'null' ? null : parentId;
         }
         if (search) {
             where.OR = [
