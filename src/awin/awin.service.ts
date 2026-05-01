@@ -239,13 +239,24 @@ export class AwinService {
 
     const awProductId = getVal(['aw_product_id', 'awproductid', 'productid', 'id']);
     const productName = getVal(['product_name', 'productname', 'name', 'title']);
-    const categoryName = getVal(['category_name', 'categoryname', 'category', 'merchant_category']);
+    const rawProductType = getVal(['product_type']);
+    const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
+    const categoryPath = rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']);
+    let finalCategory = this.extractLeafCategory(categoryPath);
 
+    // 1. Ensure the category (and its hierarchy) exists in our Category table
+    if (categoryPath && categoryPath !== 'collection') {
+      try {
+        const createdCat = await this.categoryService.create({ name: categoryPath, isAwin: true });
+        if (createdCat) {
+          finalCategory = createdCat.name;
+        }
+      } catch (err) {
+        this.logger.error(`Failed to auto-create category ${categoryPath}: ${err.message}`);
+      }
+    }
 
-
-    let finalCategory = this.extractLeafCategory(categoryName || getVal(['merchant_product_category_path']));
-
-    // Category Merging Logic: 
+    // 2. Category Merging Logic: 
     // If this Awin category is linked as a sub-item to a MANUAL category,
     // we use the Manual category name instead of the raw Awin name.
     if (finalCategory) {
@@ -253,8 +264,7 @@ export class AwinService {
         where: { name: { equals: finalCategory, mode: 'insensitive' } },
         include: { parent: true }
       });
-      // ONLY rebrand if the child category is an AWIN category being merged into a manual parent.
-      // If it's a manual subcategory, we keep its own name to allow hierarchical browsing.
+      
       if (catRecord?.isAwin && catRecord?.parent && !catRecord.parent.isAwin) {
         finalCategory = catRecord.parent.name;
       }
@@ -272,7 +282,7 @@ export class AwinService {
       category: finalCategory,
       // New Awin Fields
       merchantProductId: getVal(['merchant_product_id']),
-      merchantCategory: categoryName,
+      merchantCategory: rawMerchantCategory,
       merchantId: getVal(['merchant_id']),
       categoryId: getVal(['category_id']),
       storePrice: parseFloat(getVal(['store_price'])) || null,
@@ -293,7 +303,7 @@ export class AwinService {
       dimensions: getVal(['dimensions']),
       keywords: getVal(['keywords']),
       promotionalText: getVal(['promotional_text']),
-      productType: getVal(['product_type']),
+      productType: rawProductType,
       commissionGroup: getVal(['commission_group']),
       merchantProductCategoryPath: getVal(['merchant_product_category_path']),
       merchantProductSecondCategory: getVal(['merchant_product_second_category']),

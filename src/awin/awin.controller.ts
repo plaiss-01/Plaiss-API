@@ -135,6 +135,7 @@ export class AwinController {
       where.OR = categoryNames.flatMap(name => [
         { category: { contains: name, mode: 'insensitive' } },
         { merchantCategory: { contains: name, mode: 'insensitive' } },
+        { productType: { contains: name, mode: 'insensitive' } },
         { merchantProductCategoryPath: { contains: name, mode: 'insensitive' } }
       ]);
     }

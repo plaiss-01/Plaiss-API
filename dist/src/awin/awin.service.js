@@ -253,8 +253,21 @@ let AwinService = AwinService_1 = class AwinService {
         };
         const awProductId = getVal(['aw_product_id', 'awproductid', 'productid', 'id']);
         const productName = getVal(['product_name', 'productname', 'name', 'title']);
-        const categoryName = getVal(['category_name', 'categoryname', 'category', 'merchant_category']);
-        let finalCategory = this.extractLeafCategory(categoryName || getVal(['merchant_product_category_path']));
+        const rawProductType = getVal(['product_type']);
+        const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
+        const categoryPath = rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']);
+        let finalCategory = this.extractLeafCategory(categoryPath);
+        if (categoryPath && categoryPath !== 'collection') {
+            try {
+                const createdCat = await this.categoryService.create({ name: categoryPath, isAwin: true });
+                if (createdCat) {
+                    finalCategory = createdCat.name;
+                }
+            }
+            catch (err) {
+                this.logger.error(`Failed to auto-create category ${categoryPath}: ${err.message}`);
+            }
+        }
         if (finalCategory) {
             const catRecord = await this.prisma.category.findFirst({
                 where: { name: { equals: finalCategory, mode: 'insensitive' } },
@@ -275,7 +288,7 @@ let AwinService = AwinService_1 = class AwinService {
             merchant: getVal(['merchant_name', 'merchant', 'store_name']),
             category: finalCategory,
             merchantProductId: getVal(['merchant_product_id']),
-            merchantCategory: categoryName,
+            merchantCategory: rawMerchantCategory,
             merchantId: getVal(['merchant_id']),
             categoryId: getVal(['category_id']),
             storePrice: parseFloat(getVal(['store_price'])) || null,
@@ -296,7 +309,7 @@ let AwinService = AwinService_1 = class AwinService {
             dimensions: getVal(['dimensions']),
             keywords: getVal(['keywords']),
             promotionalText: getVal(['promotional_text']),
-            productType: getVal(['product_type']),
+            productType: rawProductType,
             commissionGroup: getVal(['commission_group']),
             merchantProductCategoryPath: getVal(['merchant_product_category_path']),
             merchantProductSecondCategory: getVal(['merchant_product_second_category']),
