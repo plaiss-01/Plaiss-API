@@ -113,7 +113,7 @@ let CategoryService = class CategoryService {
             throw error;
         }
     }
-    async findAll(isAwin, search, limit = 1000, parentId) {
+    async findAll(isAwin, search, limit = 100000, parentId) {
         const where = {};
         if (isAwin !== undefined) {
             where.isAwin = isAwin;
@@ -134,7 +134,7 @@ let CategoryService = class CategoryService {
                 parent: true,
             },
             orderBy: [{ order: 'asc' }, { name: 'asc' }],
-            take: limit,
+            take: limit > 0 ? limit : undefined,
         });
     }
     async findRoots() {

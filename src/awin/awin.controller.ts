@@ -19,7 +19,13 @@ export class AwinController {
   ) { }
 
   private productsCache = new Map<string, { data: any, timestamp: number }>();
-  private readonly CACHE_TTL = 60000; // 1 minute
+  private categoriesCache: { 
+    data: any[], 
+    categoryMap: Map<string, any>, 
+    childrenMap: Map<string, any[]>,
+    timestamp: number 
+  } | null = null;
+  private readonly CACHE_TTL = 300000; // 5 minutes for category structure
   private readonly MAX_CACHE_SIZE = 20; // Maximum number of cached queries
 
   @Post('add-product')
@@ -79,68 +85,81 @@ export class AwinController {
 
       // 1. Try to find the category in the database first (more permissive search)
       // 1. Try to find the category in the database first (Exact match first, then partial)
-      let currentCat = await this.prisma.category.findFirst({
+      // 1. Find all categories that might match the name or slug
+      const matchingCats = await this.prisma.category.findMany({
         where: {
           OR: [
-            { name: { equals: category, mode: 'insensitive' } },
-            { slug: { equals: category, mode: 'insensitive' } }
+            { name: { contains: category, mode: 'insensitive' } },
+            { slug: { contains: category, mode: 'insensitive' } }
           ]
         },
       });
 
-      if (!currentCat) {
-        currentCat = await this.prisma.category.findFirst({
-          where: {
-            OR: [
-              { name: { contains: category, mode: 'insensitive' } },
-              { slug: { contains: category, mode: 'insensitive' } }
-            ]
-          },
-        });
-      }
-
-      if (currentCat) {
-        const allCats = await this.categoryService.findAll();
-        const categoryMap = new Map<string, any>();
-        const childrenMap = new Map<string, any[]>();
-        allCats.forEach(cat => {
-          categoryMap.set(cat.id, cat);
-          if (cat.parentId) {
-            const children = childrenMap.get(cat.parentId) || [];
-            children.push(cat);
-            childrenMap.set(cat.parentId, children);
-          }
-        });
+      if (matchingCats.length > 0) {
+        const now = Date.now();
+        if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
+          const allCats = await this.categoryService.findAll();
+          const categoryMap = new Map<string, any>();
+          const childrenMap = new Map<string, any[]>();
+          allCats.forEach(cat => {
+            categoryMap.set(cat.id, cat);
+            if (cat.parentId) {
+              const children = childrenMap.get(cat.parentId) || [];
+              children.push(cat);
+              childrenMap.set(cat.parentId, children);
+            }
+          });
+          this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
+        }
+        
+        const { categoryMap, childrenMap } = this.categoriesCache;
 
         const getDescendantNames = (catId: string, visited = new Set<string>()): string[] => {
           if (visited.has(catId)) return [];
           visited.add(catId);
           const cat = categoryMap.get(catId);
           if (!cat) return [];
-          const names = [cat.name];
+          
+          let names = [cat.name];
           const children = childrenMap.get(catId) || [];
-          return names.concat(...children.map(child => getDescendantNames(child.id, visited)));
+          for (const child of children) {
+            names = names.concat(getDescendantNames(child.id, visited));
+          }
+          return names;
         };
 
-        categoryNames = getDescendantNames(currentCat.id);
+        // Gather all descendant names from ALL matching categories
+        const allDescendantNames: string[] = [];
+        for (const cat of matchingCats) {
+          allDescendantNames.push(...getDescendantNames(cat.id));
+        }
+        
+        categoryNames = Array.from(new Set([...categoryNames, ...allDescendantNames]));
       }
 
       // 2. Merge with subcategories passed from frontend (primary source of truth)
       if (subs) {
-        const subArray = subs.split(',').map(s => s.trim());
+        const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
         categoryNames = Array.from(new Set([...categoryNames, ...subArray]));
       }
 
       // 3. Search across multiple fields for the full category names
-      where.OR = categoryNames.flatMap(name => [
-        { category: { contains: name, mode: 'insensitive' } },
-        { merchantCategory: { contains: name, mode: 'insensitive' } },
-        { productType: { contains: name, mode: 'insensitive' } },
-        { merchantProductCategoryPath: { contains: name, mode: 'insensitive' } }
-      ]);
+      // 3. Search across multiple fields using the 'in' operator for performance
+      // We use 'contains' for the primary category name to catch it in paths,
+      // but use 'in' for the large list of subcategories to keep the query small.
+      where.OR = [
+        { category: { in: categoryNames, mode: 'insensitive' } },
+        { merchantCategory: { in: categoryNames, mode: 'insensitive' } },
+        { productType: { in: categoryNames, mode: 'insensitive' } },
+        { merchantProductCategoryPath: { in: categoryNames, mode: 'insensitive' } },
+        // Fallback: broaden to catch the main category name anywhere in the strings
+        { category: { contains: category, mode: 'insensitive' } },
+        { merchantCategory: { contains: category, mode: 'insensitive' } },
+        { merchantProductCategoryPath: { contains: category, mode: 'insensitive' } },
+      ];
     }
 
-    const [data, total] = await Promise.all([
+    let [data, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         skip,
@@ -166,6 +185,53 @@ export class AwinController {
       }),
       this.prisma.product.count({ where }),
     ]);
+
+    // FALLBACK: If 0 products found for the specific category/hierarchy,
+    // try a broader search using individual words from the category name.
+    if (total === 0 && category && category !== 'all-products') {
+      const words = category.split(/[\s&>|]+/).filter(w => w.length > 2);
+      if (words.length > 0) {
+        const fallbackWhere: any = {
+          OR: words.flatMap(word => [
+            { category: { contains: word, mode: 'insensitive' } },
+            { merchantCategory: { contains: word, mode: 'insensitive' } },
+            { merchantProductCategoryPath: { contains: word, mode: 'insensitive' } }
+          ])
+        };
+
+        const [fallbackData, fallbackTotal] = await Promise.all([
+          this.prisma.product.findMany({
+            where: fallbackWhere,
+            skip,
+            take: l,
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              imageUrl: true,
+              awThumbUrl: true,
+              largeImage: true,
+              category: true,
+              slug: true,
+              merchant: true,
+              productUrl: true,
+              description: true,
+              createdAt: true,
+              colour: true,
+              merchantCategory: true,
+              productType: true,
+            },
+          }),
+          this.prisma.product.count({ where: fallbackWhere }),
+        ]);
+
+        if (fallbackTotal > 0) {
+          data = fallbackData;
+          total = fallbackTotal;
+        }
+      }
+    }
 
     const products = data.map((p: any) => {
       const img = p.imageUrl || p.largeImage || p.awThumbUrl || '';
@@ -225,29 +291,45 @@ export class AwinController {
   @Get('categories')
   @ApiOperation({ summary: 'Get all unique product categories with products' })
   async getCategories() {
-    const allCategories = await this.categoryService.findAll();
+    const now = Date.now();
+    if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
+      const allCats = await this.categoryService.findAll();
+      const categoryMap = new Map<string, any>();
+      const childrenMap = new Map<string, any[]>();
+      allCats.forEach(cat => {
+        categoryMap.set(cat.id, cat);
+        if (cat.parentId) {
+          const children = childrenMap.get(cat.parentId) || [];
+          children.push(cat);
+          childrenMap.set(cat.parentId, children);
+        }
+      });
+      this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
+    }
+    const { data: allCategories, categoryMap, childrenMap } = this.categoriesCache;
 
-    // 2. Create optimized lookup maps
-    const categoryMap = new Map<string, any>();
-    const childrenMap = new Map<string, any[]>();
-    allCategories.forEach(cat => {
-      categoryMap.set(cat.id, cat);
-      if (cat.parentId) {
-        const children = childrenMap.get(cat.parentId) || [];
-        children.push(cat);
-        childrenMap.set(cat.parentId, children);
-      }
-    });
-
-    const counts = await this.prisma.product.groupBy({
-      by: ['category'],
-      _count: { _all: true }
-    });
+    const counts = await Promise.all([
+      this.prisma.product.groupBy({
+        by: ['category'],
+        _count: { _all: true }
+      }),
+      this.prisma.product.groupBy({
+        by: ['merchantCategory'],
+        _count: { _all: true }
+      })
+    ]);
 
     const countMap: Record<string, number> = {};
-    counts.forEach(c => {
+    counts[0].forEach(c => {
       if (c.category) {
-        countMap[c.category.toLowerCase().trim()] = c._count._all;
+        const key = c.category.toLowerCase().trim();
+        countMap[key] = (countMap[key] || 0) + c._count._all;
+      }
+    });
+    counts[1].forEach(c => {
+      if (c.merchantCategory) {
+        const key = c.merchantCategory.toLowerCase().trim();
+        countMap[key] = (countMap[key] || 0) + c._count._all;
       }
     });
 

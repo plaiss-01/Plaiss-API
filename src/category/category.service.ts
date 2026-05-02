@@ -125,7 +125,7 @@ export class CategoryService {
     }
   }
 
-  async findAll(isAwin?: boolean, search?: string, limit: number = 1000, parentId?: string | null) {
+  async findAll(isAwin?: boolean, search?: string, limit: number = 100000, parentId?: string | null) {
     const where: any = {};
     if (isAwin !== undefined) {
       where.isAwin = isAwin;
@@ -147,7 +147,7 @@ export class CategoryService {
         parent: true,
       },
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
-      take: limit, // Prevent massive memory consumption
+      take: limit > 0 ? limit : undefined,
     });
   }
 
