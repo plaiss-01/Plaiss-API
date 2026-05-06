@@ -22,4 +22,10 @@ export declare class AwinService {
     scrapeSingleProduct(url: string): Promise<any>;
     private extractMerchant;
     private extractLeafCategory;
+    private getOrCreateCategoryRecord;
+    private normalizeProductAttributes;
+    deduplicateProducts(): Promise<{
+        mergedCount: number;
+        variantCount: number;
+    }>;
 }

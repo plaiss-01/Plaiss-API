@@ -105,6 +105,11 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  internalCategoryId String?
+  internalCategory   Category? @relation("ProductCategory", fields: [internalCategoryId], references: [id])
+  attributes         ProductAttribute[]
+  colorVariants      ProductColorVariant[]
+
   @@index([category])
   @@index([name])
   @@index([merchant])
@@ -142,6 +147,7 @@ model Category {
   order     Int        @default(0)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+  products  Product[]  @relation("ProductCategory")
 }
 
 model PortfolioImage {
@@ -164,4 +170,56 @@ model BlogPost {
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Attribute {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  values    AttributeValue[]
+  products  ProductAttribute[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AttributeValue {
+  id          String   @id @default(uuid())
+  value       String
+  attributeId String
+  attribute   Attribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  products    ProductAttribute[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([attributeId, value])
+}
+
+model ProductAttribute {
+  id               String   @id @default(uuid())
+  productId        String
+  attributeId      String
+  attributeValueId String
+  
+  product          Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attribute        Attribute      @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([productId, attributeId])
+}
+
+model ProductColorVariant {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  colorName   String
+  imageUrl    String?
+  productUrl  String?
+  awinId      String?  @unique
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([productId])
 }

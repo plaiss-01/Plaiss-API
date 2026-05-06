@@ -51,7 +51,7 @@ let AwinController = class AwinController {
     async getImportStatus(id) {
         return this.statusService.getJob(id);
     }
-    async getAllProducts(page = '1', limit = '50', category, subs) {
+    async getAllProducts(page = '1', limit = '50', category, subs, search) {
         const p = parseInt(page, 10) || 1;
         let l = parseInt(limit, 10) || 50;
         if (l > 1000)
@@ -66,65 +66,81 @@ let AwinController = class AwinController {
             }
         }
         const where = {};
-        if (category && category !== 'all-products') {
-            let categoryNames = [category];
-            const matchingCats = await this.prisma.category.findMany({
-                where: {
-                    OR: [
-                        { name: { contains: category, mode: 'insensitive' } },
-                        { slug: { contains: category, mode: 'insensitive' } }
-                    ]
-                },
-            });
-            if (matchingCats.length > 0) {
-                const now = Date.now();
-                if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
-                    const allCats = await this.categoryService.findAll();
-                    const categoryMap = new Map();
-                    const childrenMap = new Map();
-                    allCats.forEach(cat => {
-                        categoryMap.set(cat.id, cat);
-                        if (cat.parentId) {
-                            const children = childrenMap.get(cat.parentId) || [];
-                            children.push(cat);
-                            childrenMap.set(cat.parentId, children);
-                        }
-                    });
-                    this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
-                }
-                const { categoryMap, childrenMap } = this.categoriesCache;
-                const getDescendantNames = (catId, visited = new Set()) => {
-                    if (visited.has(catId))
-                        return [];
-                    visited.add(catId);
-                    const cat = categoryMap.get(catId);
-                    if (!cat)
-                        return [];
-                    let names = [cat.name];
-                    const children = childrenMap.get(catId) || [];
-                    for (const child of children) {
-                        names = names.concat(getDescendantNames(child.id, visited));
+        if (search) {
+            where.OR = [
+                { name: { contains: search, mode: 'insensitive' } },
+                { description: { contains: search, mode: 'insensitive' } },
+                { merchant: { contains: search, mode: 'insensitive' } },
+                { category: { contains: search, mode: 'insensitive' } },
+            ];
+        }
+        else if (category && category !== 'all-products') {
+            const now = Date.now();
+            if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
+                const allCats = await this.categoryService.findAll();
+                const categoryMap = new Map();
+                const childrenMap = new Map();
+                allCats.forEach(cat => {
+                    categoryMap.set(cat.id, cat);
+                    if (cat.parentId) {
+                        const children = childrenMap.get(cat.parentId) || [];
+                        children.push(cat);
+                        childrenMap.set(cat.parentId, children);
                     }
-                    return names;
-                };
-                const allDescendantNames = [];
-                for (const cat of matchingCats) {
-                    allDescendantNames.push(...getDescendantNames(cat.id));
+                });
+                this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
+            }
+            const { data: allCats, categoryMap, childrenMap } = this.categoriesCache;
+            const targetCats = allCats.filter(c => c.slug.toLowerCase() === category.toLowerCase() ||
+                c.name.toLowerCase() === category.toLowerCase());
+            console.log(`[getAllProducts] Query: "${category}", Found ${targetCats.length} target categories.`);
+            const getDescendantIds = (catId, visited = new Set()) => {
+                if (visited.has(catId))
+                    return [];
+                visited.add(catId);
+                let ids = [catId];
+                const children = childrenMap.get(catId) || [];
+                for (const child of children) {
+                    ids = ids.concat(getDescendantIds(child.id, visited));
                 }
-                categoryNames = Array.from(new Set([...categoryNames, ...allDescendantNames]));
+                return ids;
+            };
+            const allCategoryIds = [];
+            const allCategoryNames = [];
+            for (const cat of targetCats) {
+                const children = childrenMap.get(cat.id) || [];
+                if (children.length > 0) {
+                    for (const child of children) {
+                        const descendantIds = getDescendantIds(child.id);
+                        allCategoryIds.push(...descendantIds);
+                        descendantIds.forEach(id => {
+                            const c = categoryMap.get(id);
+                            if (c) {
+                                allCategoryNames.push(c.name);
+                                allCategoryNames.push(c.name.toLowerCase().trim());
+                            }
+                        });
+                    }
+                }
+                else {
+                    allCategoryIds.push(cat.id);
+                    allCategoryNames.push(cat.name);
+                    allCategoryNames.push(cat.name.toLowerCase().trim());
+                }
             }
             if (subs) {
                 const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
-                categoryNames = Array.from(new Set([...categoryNames, ...subArray]));
+                allCategoryNames.push(...subArray);
+                const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
+                allCategoryIds.push(...subCats.map(c => c.id));
             }
+            let uniqueIds = Array.from(new Set(allCategoryIds));
+            let uniqueNames = Array.from(new Set(allCategoryNames));
+            console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
             where.OR = [
-                { category: { in: categoryNames, mode: 'insensitive' } },
-                { merchantCategory: { in: categoryNames, mode: 'insensitive' } },
-                { productType: { in: categoryNames, mode: 'insensitive' } },
-                { merchantProductCategoryPath: { in: categoryNames, mode: 'insensitive' } },
-                { category: { contains: category, mode: 'insensitive' } },
-                { merchantCategory: { contains: category, mode: 'insensitive' } },
-                { merchantProductCategoryPath: { contains: category, mode: 'insensitive' } },
+                { internalCategoryId: { in: uniqueIds } },
+                { category: { in: uniqueNames, mode: 'insensitive' } },
+                { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
             ];
         }
         let [data, total] = await Promise.all([
@@ -149,11 +165,75 @@ let AwinController = class AwinController {
                     colour: true,
                     merchantCategory: true,
                     productType: true,
+                    colorVariants: true,
+                    attributes: {
+                        select: {
+                            attribute: { select: { name: true } },
+                            attributeValue: { select: { value: true } }
+                        }
+                    }
                 },
             }),
             this.prisma.product.count({ where }),
         ]);
         if (total === 0 && category && category !== 'all-products') {
+            console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
+            const { data: allCats, categoryMap } = this.categoriesCache || {};
+            if (allCats && categoryMap) {
+                const target = allCats.find(c => c.slug.toLowerCase() === category.toLowerCase());
+                if (target && target.parentId) {
+                    const parent = categoryMap.get(target.parentId);
+                    if (parent) {
+                        console.log(`[getAllProducts] Falling back to parent category: ${parent.name}`);
+                        const [fallbackData, fallbackTotal] = await Promise.all([
+                            this.prisma.product.findMany({
+                                where: {
+                                    OR: [
+                                        { internalCategoryId: parent.id },
+                                        { category: { contains: parent.name, mode: 'insensitive' } }
+                                    ]
+                                },
+                                skip,
+                                take: l,
+                                orderBy: { createdAt: 'desc' },
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    price: true,
+                                    imageUrl: true,
+                                    awThumbUrl: true,
+                                    largeImage: true,
+                                    category: true,
+                                    slug: true,
+                                    merchant: true,
+                                    productUrl: true,
+                                    description: true,
+                                    createdAt: true,
+                                    colour: true,
+                                    merchantCategory: true,
+                                    productType: true,
+                                    colorVariants: true,
+                                    attributes: {
+                                        select: {
+                                            attribute: { select: { name: true } },
+                                            attributeValue: { select: { value: true } }
+                                        }
+                                    }
+                                },
+                            }),
+                            this.prisma.product.count({
+                                where: {
+                                    OR: [
+                                        { internalCategoryId: parent.id },
+                                        { category: { contains: parent.name, mode: 'insensitive' } }
+                                    ]
+                                }
+                            }),
+                        ]);
+                        return { data: fallbackData, total: fallbackTotal, page: p, totalPages: Math.ceil(fallbackTotal / l) };
+                    }
+                }
+            }
             const words = category.split(/[\s&>|]+/).filter(w => w.length > 2);
             if (words.length > 0) {
                 const fallbackWhere = {
@@ -185,6 +265,13 @@ let AwinController = class AwinController {
                             colour: true,
                             merchantCategory: true,
                             productType: true,
+                            colorVariants: true,
+                            attributes: {
+                                select: {
+                                    attribute: { select: { name: true } },
+                                    attributeValue: { select: { value: true } }
+                                }
+                            }
                         },
                     }),
                     this.prisma.product.count({ where: fallbackWhere }),
@@ -202,7 +289,19 @@ let AwinController = class AwinController {
                 imageUrl: img,
                 image: img,
                 images: img ? [img] : [],
-                colors: p.colour ? [{ name: p.colour, hex: p.colour }] : [],
+                colors: [
+                    ...(p.colour ? [{ name: p.colour, hex: p.colour, imageUrl: img, productUrl: p.productUrl }] : []),
+                    ...(p.colorVariants || []).map((v) => ({
+                        name: v.colorName,
+                        hex: v.colorName,
+                        imageUrl: v.imageUrl,
+                        productUrl: v.productUrl
+                    }))
+                ],
+                normalizedAttributes: (p.attributes || []).reduce((acc, attr) => {
+                    acc[attr.attribute.name] = attr.attributeValue.value;
+                    return acc;
+                }, {}),
             };
         });
         const result = {
@@ -256,51 +355,41 @@ let AwinController = class AwinController {
             this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
         }
         const { data: allCategories, categoryMap, childrenMap } = this.categoriesCache;
-        const counts = await Promise.all([
-            this.prisma.product.groupBy({
-                by: ['category'],
-                _count: { _all: true }
-            }),
-            this.prisma.product.groupBy({
-                by: ['merchantCategory'],
-                _count: { _all: true }
-            })
-        ]);
-        const countMap = {};
-        counts[0].forEach(c => {
-            if (c.category) {
-                const key = c.category.toLowerCase().trim();
-                countMap[key] = (countMap[key] || 0) + c._count._all;
-            }
+        const counts = await this.prisma.product.groupBy({
+            by: ['internalCategoryId'],
+            _count: { _all: true }
         });
-        counts[1].forEach(c => {
-            if (c.merchantCategory) {
-                const key = c.merchantCategory.toLowerCase().trim();
-                countMap[key] = (countMap[key] || 0) + c._count._all;
+        const countMap = {};
+        counts.forEach(c => {
+            if (c.internalCategoryId) {
+                countMap[c.internalCategoryId] = c._count._all;
             }
         });
         const memo = new Map();
         const calculateAllCounts = () => {
             allCategories.forEach(cat => {
-                const catName = cat.name.toLowerCase().trim();
-                memo.set(cat.id, countMap[catName] || 0);
+                memo.set(cat.id, countMap[cat.id] || 0);
             });
         };
         const getDeepCount = (catId, visited = new Set()) => {
             if (visited.has(catId))
                 return 0;
-            if (memo.has(catId) && memo.get(catId) !== undefined && memo.get(catId) > 0) {
-            }
+            if (memo.has(catId))
+                return memo.get(catId);
             visited.add(catId);
             const cat = categoryMap.get(catId);
             if (!cat)
                 return 0;
-            const catName = cat.name.toLowerCase().trim();
-            let total = countMap[catName] || 0;
             const children = childrenMap.get(catId) || [];
-            children.forEach((child) => {
-                total += getDeepCount(child.id, visited);
-            });
+            let total = 0;
+            if (children.length > 0) {
+                children.forEach((child) => {
+                    total += getDeepCount(child.id, visited);
+                });
+            }
+            else {
+                total = countMap[catId] || 0;
+            }
             memo.set(catId, total);
             return total;
         };
@@ -352,12 +441,32 @@ let AwinController = class AwinController {
         const product = await this.prisma.product.findFirst({
             where: {
                 slug: { equals: slug, mode: 'insensitive' }
+            },
+            include: {
+                colorVariants: true,
+                attributes: {
+                    include: {
+                        attribute: true,
+                        attributeValue: true
+                    }
+                }
             }
         });
         return product;
     }
     async getProductById(id) {
-        return this.prisma.product.findUnique({ where: { id } });
+        return this.prisma.product.findUnique({
+            where: { id },
+            include: {
+                colorVariants: true,
+                attributes: {
+                    include: {
+                        attribute: true,
+                        attributeValue: true
+                    }
+                }
+            }
+        });
     }
     async updateProduct(id, updateProductDto) {
         return this.prisma.product.update({
@@ -376,6 +485,11 @@ let AwinController = class AwinController {
                 merchant: { equals: merchantName, mode: 'insensitive' }
             }
         });
+        this.productsCache.clear();
+        return result;
+    }
+    async deduplicate() {
+        const result = await this.awinService.deduplicateProducts();
         this.productsCache.clear();
         return result;
     }
@@ -415,8 +529,9 @@ __decorate([
     __param(1, (0, common_1.Query)('limit')),
     __param(2, (0, common_1.Query)('category')),
     __param(3, (0, common_1.Query)('subs')),
+    __param(4, (0, common_1.Query)('search')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
 __decorate([
@@ -479,6 +594,13 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "deleteProductsByMerchant", null);
+__decorate([
+    (0, common_1.Post)('products/deduplicate'),
+    (0, swagger_1.ApiOperation)({ summary: 'Run global product deduplication' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "deduplicate", null);
 exports.AwinController = AwinController = __decorate([
     (0, swagger_1.ApiTags)('awin'),
     (0, common_1.Controller)('awin'),

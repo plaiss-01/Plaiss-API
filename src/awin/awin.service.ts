@@ -63,8 +63,27 @@ export class AwinService {
           
           results.push({ url, status: 'started', jobId });
         } else {
-          const res = await this.scrapeSingleProduct(url);
-          results.push({ url, status: 'success', data: res });
+          // Check if already exists before scraping to prevent fetching
+          const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
+          const potentialAwinId = awinIdMatch ? awinIdMatch[1] : null;
+
+          let exists = false;
+          if (potentialAwinId) {
+             const existing = await this.prisma.product.findUnique({ where: { awinId: potentialAwinId } });
+             if (existing) exists = true;
+          }
+          if (!exists) {
+             const existingByUrl = await this.prisma.product.findFirst({ where: { productUrl: url } });
+             if (existingByUrl) exists = true;
+          }
+
+          if (exists) {
+             this.logger.log(`Product already exists for URL ${url}. Skipping fetch.`);
+             results.push({ url, status: 'skipped', message: 'Product already added. Not fetching.' });
+          } else {
+             const res = await this.scrapeSingleProduct(url);
+             results.push({ url, status: 'success', data: res });
+          }
         }
       } catch (error) {
         this.logger.error(`Error processing URL ${url}: ${error.message}`);
@@ -79,6 +98,9 @@ export class AwinService {
       // Return jobId at top level if it exists (for feeds)
       if (results[0].jobId) {
         return { jobId: results[0].jobId, status: 'started', url: results[0].url };
+      }
+      if (results[0].status === 'skipped') {
+        return { message: results[0].message, status: 'skipped' };
       }
       return results[0].data;
     }
@@ -245,22 +267,27 @@ export class AwinService {
     let finalCategory = this.extractLeafCategory(categoryPath);
 
     // 1. Category Merging Logic: 
-    // If this Awin category is linked as a sub-item to a MANUAL category,
-    // we use the Manual category name instead of the raw Awin name.
-    if (finalCategory) {
-      const catRecord = await (this.prisma as any).category.findFirst({
-        where: { name: { equals: finalCategory, mode: 'insensitive' } },
-        include: { parent: true }
-      });
-      
-      if (catRecord?.isAwin && catRecord?.parent && !catRecord.parent.isAwin) {
-        finalCategory = catRecord.parent.name;
+    let internalCategoryId: string | null = null;
+    if (finalCategory && finalCategory !== 'collection') {
+      const catRec = await this.getOrCreateCategoryRecord(finalCategory);
+      if (catRec) {
+        finalCategory = catRec.name;
+        internalCategoryId = catRec.id;
       }
+    }
+    
+    // Ensure product has basic complete attributes
+    const finalPrice = parseFloat(getVal(['search_price', 'price'])) || 0;
+    const finalImageUrl = (getVal(['aw_image_url', 'large_image', 'merchant_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']) || '').replace('http://', 'https://');
+    
+    if (!productName || productName === 'Unknown Product' || finalPrice === 0 || !finalImageUrl || !finalCategory || finalCategory === 'collection') {
+       throw new Error(`Product has incomplete attributes. Name: ${productName}, Price: ${finalPrice}, Category: ${finalCategory}. Must not import.`);
     }
 
     const productData: any = {
       name: productName,
       slug: this.slugify(productName, awProductId),
+      internalCategoryId,
       description: getVal(['description', 'product_description']),
       price: parseFloat(getVal(['search_price', 'price'])) || 0,
       currency: getVal(['currency']),
@@ -355,8 +382,69 @@ export class AwinService {
       basketLink: getVal(['basket_link', 'basketlink']),
     };
 
+    // Check if this is a color variant of an existing product
+    const parentProductId = getVal(['parent_product_id', 'parentproductid']);
+    let mainProductIdToUse = null;
+
+    if (parentProductId) {
+       const existingParent = await (this.prisma as any).product.findFirst({
+          where: { OR: [{ awinId: parentProductId }, { parentProductId: parentProductId }] }
+       });
+       if (existingParent && existingParent.awinId !== awProductId) {
+          mainProductIdToUse = existingParent.id;
+       }
+    }
+
+    if (!mainProductIdToUse && productData.productModel) {
+       const existingByModel = await (this.prisma as any).product.findFirst({
+          where: { productModel: productData.productModel, brandName: productData.brandName }
+       });
+       if (existingByModel && existingByModel.awinId !== awProductId) {
+          mainProductIdToUse = existingByModel.id;
+       }
+    }
+
+    const colour = getVal(['colour', 'color']);
+
+    if (!mainProductIdToUse && colour) {
+       // Try matching by base name (name without color)
+       let baseName = productName;
+       const regex = new RegExp(`\\b${colour}\\b`, 'ig');
+       baseName = baseName.replace(regex, '').replace(/[-\s_]+$/, '').trim();
+       
+       if (baseName.length > 5) { // Ensure baseName is significant
+           const existingByBaseName = await (this.prisma as any).product.findFirst({
+              where: { name: { startsWith: baseName }, merchant: productData.merchant }
+           });
+           if (existingByBaseName && existingByBaseName.awinId !== awProductId) {
+              mainProductIdToUse = existingByBaseName.id;
+           }
+       }
+    }
+
+    if (mainProductIdToUse && colour) {
+       // Save as variant
+       await (this.prisma as any).productColorVariant.upsert({
+          where: { awinId: awProductId },
+          update: {
+             colorName: colour,
+             imageUrl: productData.imageUrl,
+             productUrl: productData.productUrl,
+             productId: mainProductIdToUse
+          },
+          create: {
+             awinId: awProductId,
+             colorName: colour,
+             imageUrl: productData.imageUrl,
+             productUrl: productData.productUrl,
+             productId: mainProductIdToUse
+          }
+       });
+       return { id: mainProductIdToUse, isVariant: true };
+    }
+
     // Mapping Awin CSV columns to our schema
-    return (this.prisma as any).product.upsert({
+    const product = await (this.prisma as any).product.upsert({
       where: { awinId: awProductId },
       update: productData,
       create: {
@@ -364,6 +452,19 @@ export class AwinService {
         awinId: awProductId,
       },
     });
+
+    // Normalize attributes for refining
+    await this.normalizeProductAttributes(product.id, {
+      Brand: productData.brandName,
+      Colour: productData.colour,
+      Condition: productData.condition,
+      ProductType: productData.productType,
+      Model: productData.productModel,
+      Material: getVal(['material']),
+      Size: getVal(['size'])
+    });
+
+    return product;
   }
 
   async scrapeSingleProduct(url: string) {
@@ -417,13 +518,25 @@ export class AwinService {
 
       const safeCategory = (category || 'collection').toLowerCase().trim();
 
+      // Enforce complete attributes before proceeding
+      if (!name || name === 'Unknown Product' || price === 0 || !imageUrl || safeCategory === 'collection') {
+        this.logger.warn(`Incomplete attributes for ${url}. Name: ${name}, Price: ${price}, Image: ${imageUrl}, Category: ${safeCategory}`);
+        throw new Error('Product has incomplete attributes (missing name, price, image, or category). Must not import from link.');
+      }
+
       // Try to get a unique Awin ID or similar from URL to prevent duplicates
       const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
       const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
 
       // Auto-sync category
-      if (safeCategory) {
-        await this.categoryService.create({ name: safeCategory, isAwin: true }).catch(() => {});
+      let internalCategoryId: string | null = null;
+      let finalCategoryName = safeCategory;
+      if (safeCategory && safeCategory !== 'collection') {
+        const catRec = await this.getOrCreateCategoryRecord(safeCategory);
+        if (catRec) {
+          internalCategoryId = catRec.id;
+          finalCategoryName = catRec.name;
+        }
       }
 
       const product = await (this.prisma as any).product.upsert({
@@ -436,7 +549,8 @@ export class AwinService {
           currency,
           imageUrl,
           productUrl,
-          category: safeCategory,
+          category: finalCategoryName,
+          internalCategoryId,
           merchant: this.extractMerchant(url),
           // New fields support for single product scraping
           merchantProductId: awinId, // Use awinId if specific merchant ID is not scraped
@@ -450,10 +564,19 @@ export class AwinService {
           currency,
           imageUrl,
           productUrl,
-          category: category.toLowerCase().trim(),
+          category: finalCategoryName,
+          internalCategoryId,
           merchant: this.extractMerchant(url),
           merchantProductId: awinId,
         },
+      });
+
+      // Normalize Attributes for single products if any attributes are present
+      // Currently scrapeSingleProduct doesn't extract full attributes, but we ensure the hook exists
+      await this.normalizeProductAttributes(product.id, {
+        Brand: '',
+        Colour: '',
+        Condition: ''
       });
 
       this.logger.log(`Successfully processed product: ${product.name} (ID: ${product.id})`);
@@ -479,6 +602,153 @@ export class AwinService {
     // Split by > or | or &gt;
     const parts = path.split(/\s*[>|]\s*|\s*&gt;\s*/);
     return parts[parts.length - 1].trim() || 'collection';
+  }
+
+  private async getOrCreateCategoryRecord(categoryName: string): Promise<{ id: string, name: string } | null> {
+    const cleanName = categoryName.toLowerCase().trim();
+    if (!cleanName || cleanName === 'collection') return null;
+
+    let catRecord = await (this.prisma as any).category.findFirst({
+      where: { name: { equals: cleanName, mode: 'insensitive' } },
+      include: { parent: true }
+    });
+
+    if (catRecord) {
+      if (catRecord.isAwin && catRecord.parent && !catRecord.parent.isAwin) {
+        return { id: catRecord.parent.id, name: catRecord.parent.name };
+      }
+      return { id: catRecord.id, name: catRecord.name };
+    }
+
+    try {
+      const newCat = await (this.prisma as any).category.create({
+        data: {
+          name: cleanName,
+          slug: cleanName.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `cat-${Date.now()}`,
+          isAwin: true,
+        }
+      });
+      return { id: newCat.id, name: newCat.name };
+    } catch (e) {
+      const existing = await (this.prisma as any).category.findFirst({
+        where: { name: cleanName }
+      });
+      return existing ? { id: existing.id, name: existing.name } : null;
+    }
+  }
+
+  private async normalizeProductAttributes(productId: string, attributesMap: Record<string, string | undefined | null>) {
+    for (const [attrName, attrValue] of Object.entries(attributesMap)) {
+      if (!attrValue || attrValue.trim() === '') continue;
+      
+      const cleanValue = attrValue.trim();
+      const cleanName = attrName.trim();
+
+      // Ensure Attribute exists
+      const attribute = await (this.prisma as any).attribute.upsert({
+        where: { name: cleanName },
+        update: {},
+        create: { name: cleanName },
+      });
+
+      // Ensure AttributeValue exists
+      const attributeValue = await (this.prisma as any).attributeValue.upsert({
+        where: { attributeId_value: { attributeId: attribute.id, value: cleanValue } },
+        update: {},
+        create: { value: cleanValue, attributeId: attribute.id },
+      });
+
+      // Link to Product
+      await (this.prisma as any).productAttribute.upsert({
+        where: { productId_attributeId: { productId, attributeId: attribute.id } },
+        update: { attributeValueId: attributeValue.id },
+        create: { productId, attributeId: attribute.id, attributeValueId: attributeValue.id },
+      });
+    }
+  }
+
+  async deduplicateProducts() {
+    this.logger.log('Starting global product deduplication...');
+    const allProducts = await (this.prisma as any).product.findMany({
+      include: { colorVariants: true },
+    });
+
+    const groups = new Map<string, any[]>();
+
+    allProducts.forEach((p: any) => {
+      // Create a "Core Name" by stripping common variant terms
+      let coreName = p.name
+        .toLowerCase()
+        .replace(/\b(fabric|leather|velvet|chenille|linen|wood|metal|glass|gloss|matt|oak|pine|walnut|ash|marble)\b/gi, '')
+        .replace(/\b(\d+)\s*(seater|piece|set|pack|kg|g|cm|mm|m)\b/gi, '')
+        .replace(/^[0-9\s-]+/, '') // Strip leading numbers
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (coreName.length < 5) coreName = p.name.toLowerCase().trim();
+
+      const key = `${coreName}`;
+      const group = groups.get(key) || [];
+      group.push(p);
+      groups.set(key, group);
+    });
+
+    let mergedCount = 0;
+    let variantCount = 0;
+
+    for (const [key, products] of groups.entries()) {
+      if (products.length <= 1) continue;
+
+      // Pick the best "Master" product (e.g., one with the most information or first imported)
+      const sorted = products.sort((a, b) => (b.description?.length || 0) - (a.description?.length || 0));
+      const master = sorted[0];
+      const variants = sorted.slice(1);
+
+      for (const v of variants) {
+        try {
+          // Check if it already has color info
+          const colorName = v.colour || v.name.split(' ').find((word: string) => 
+            ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold'].includes(word.toLowerCase())
+          ) || 'Original';
+
+          // Create variant
+          await (this.prisma as any).productColorVariant.upsert({
+            where: { awinId: v.awinId },
+            update: {
+              colorName,
+              imageUrl: v.imageUrl,
+              productUrl: v.productUrl,
+              productId: master.id,
+            },
+            create: {
+              awinId: v.awinId,
+              colorName,
+              imageUrl: v.imageUrl,
+              productUrl: v.productUrl,
+              productId: master.id,
+            },
+          });
+
+          // Move any existing variants of 'v' to 'master'
+          if (v.colorVariants && v.colorVariants.length > 0) {
+             await (this.prisma as any).productColorVariant.updateMany({
+                where: { productId: v.id },
+                data: { productId: master.id }
+             });
+          }
+
+          // Delete the duplicate product
+          await (this.prisma as any).product.delete({ where: { id: v.id } });
+          mergedCount++;
+          variantCount++;
+        } catch (err) {
+          this.logger.error(`Failed to merge ${v.name} into ${master.name}: ${err.message}`);
+        }
+      }
+    }
+
+    this.logger.log(`Deduplication complete. Merged ${mergedCount} products into variants.`);
+    return { mergedCount, variantCount };
   }
 }
 
