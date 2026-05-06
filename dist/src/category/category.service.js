@@ -8,16 +8,39 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var CategoryService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CategoryService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma.service");
 let CategoryService = class CategoryService {
+    static { CategoryService_1 = this; }
     prisma;
     constructor(prisma) {
         this.prisma = prisma;
     }
+    static categoriesCache = null;
+    CACHE_TTL = 30000;
+    async getCategoryStructure() {
+        const now = Date.now();
+        if (!CategoryService_1.categoriesCache || now - CategoryService_1.categoriesCache.timestamp > this.CACHE_TTL) {
+            const allCats = await this.findAll();
+            const categoryMap = new Map();
+            const childrenMap = new Map();
+            allCats.forEach(cat => {
+                categoryMap.set(cat.id, cat);
+                if (cat.parentId) {
+                    const children = childrenMap.get(cat.parentId) || [];
+                    children.push(cat);
+                    childrenMap.set(cat.parentId, children);
+                }
+            });
+            CategoryService_1.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
+        }
+        return CategoryService_1.categoriesCache;
+    }
     clearCache() {
+        CategoryService_1.categoriesCache = null;
     }
     slugify(text) {
         return text
@@ -338,7 +361,7 @@ let CategoryService = class CategoryService {
     }
 };
 exports.CategoryService = CategoryService;
-exports.CategoryService = CategoryService = __decorate([
+exports.CategoryService = CategoryService = CategoryService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService])
 ], CategoryService);

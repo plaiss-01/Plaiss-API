@@ -11,7 +11,6 @@ export declare class AwinController {
     private readonly categoryService;
     constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService, categoryService: CategoryService);
     private productsCache;
-    private categoriesCache;
     private readonly CACHE_TTL;
     private readonly MAX_CACHE_SIZE;
     addProduct(createProductDto: CreateProductDto): Promise<any>;
@@ -34,8 +33,8 @@ export declare class AwinController {
     updateProduct(id: string, updateProductDto: UpdateProductDto): Promise<{
         id: string;
         awinId: string | null;
-        slug: string | null;
         name: string;
+        slug: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
@@ -126,8 +125,8 @@ export declare class AwinController {
     deleteProduct(id: string): Promise<{
         id: string;
         awinId: string | null;
-        slug: string | null;
         name: string;
+        slug: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;

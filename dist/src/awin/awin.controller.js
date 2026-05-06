@@ -34,8 +34,7 @@ let AwinController = class AwinController {
         this.categoryService = categoryService;
     }
     productsCache = new Map();
-    categoriesCache = null;
-    CACHE_TTL = 300000;
+    CACHE_TTL = 30000;
     MAX_CACHE_SIZE = 20;
     async addProduct(createProductDto) {
         return this.awinService.addProductFromUrl(createProductDto.url);
@@ -75,22 +74,7 @@ let AwinController = class AwinController {
             ];
         }
         else if (category && category !== 'all-products') {
-            const now = Date.now();
-            if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
-                const allCats = await this.categoryService.findAll();
-                const categoryMap = new Map();
-                const childrenMap = new Map();
-                allCats.forEach(cat => {
-                    categoryMap.set(cat.id, cat);
-                    if (cat.parentId) {
-                        const children = childrenMap.get(cat.parentId) || [];
-                        children.push(cat);
-                        childrenMap.set(cat.parentId, children);
-                    }
-                });
-                this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
-            }
-            const { data: allCats, categoryMap, childrenMap } = this.categoriesCache;
+            const { data: allCats, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
             const targetCats = allCats.filter(c => c.slug.toLowerCase() === category.toLowerCase() ||
                 c.name.toLowerCase() === category.toLowerCase());
             console.log(`[getAllProducts] Query: "${category}", Found ${targetCats.length} target categories.`);
@@ -178,7 +162,7 @@ let AwinController = class AwinController {
         ]);
         if (total === 0 && category && category !== 'all-products') {
             console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
-            const { data: allCats, categoryMap } = this.categoriesCache || {};
+            const { data: allCats, categoryMap } = await this.categoryService.getCategoryStructure();
             if (allCats && categoryMap) {
                 const target = allCats.find(c => c.slug.toLowerCase() === category.toLowerCase());
                 if (target && target.parentId) {
@@ -339,22 +323,7 @@ let AwinController = class AwinController {
             .sort((a, b) => a.localeCompare(b));
     }
     async getCategories() {
-        const now = Date.now();
-        if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
-            const allCats = await this.categoryService.findAll();
-            const categoryMap = new Map();
-            const childrenMap = new Map();
-            allCats.forEach(cat => {
-                categoryMap.set(cat.id, cat);
-                if (cat.parentId) {
-                    const children = childrenMap.get(cat.parentId) || [];
-                    children.push(cat);
-                    childrenMap.set(cat.parentId, children);
-                }
-            });
-            this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
-        }
-        const { data: allCategories, categoryMap, childrenMap } = this.categoriesCache;
+        const { data: allCategories, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
         const counts = await this.prisma.product.groupBy({
             by: ['internalCategoryId'],
             _count: { _all: true }

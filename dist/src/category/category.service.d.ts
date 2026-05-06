@@ -2,6 +2,14 @@ import { PrismaService } from '../prisma.service';
 export declare class CategoryService {
     private readonly prisma;
     constructor(prisma: PrismaService);
+    private static categoriesCache;
+    private readonly CACHE_TTL;
+    getCategoryStructure(): Promise<{
+        data: any[];
+        categoryMap: Map<string, any>;
+        childrenMap: Map<string, any[]>;
+        timestamp: number;
+    }>;
     clearCache(): void;
     private slugify;
     create(data: {

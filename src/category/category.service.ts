@@ -5,9 +5,37 @@ import { PrismaService } from '../prisma.service';
 export class CategoryService {
   constructor(private readonly prisma: PrismaService) { }
 
+  private static categoriesCache: { 
+    data: any[], 
+    categoryMap: Map<string, any>, 
+    childrenMap: Map<string, any[]>,
+    timestamp: number 
+  } | null = null;
+  private readonly CACHE_TTL = 30000; // 30 seconds for category structure
+
+  async getCategoryStructure() {
+    const now = Date.now();
+    if (!CategoryService.categoriesCache || now - CategoryService.categoriesCache.timestamp > this.CACHE_TTL) {
+      const allCats = await this.findAll();
+      const categoryMap = new Map<string, any>();
+      const childrenMap = new Map<string, any[]>();
+      allCats.forEach(cat => {
+        categoryMap.set(cat.id, cat);
+        if (cat.parentId) {
+          const children = childrenMap.get(cat.parentId) || [];
+          children.push(cat);
+          childrenMap.set(cat.parentId, children);
+        }
+      });
+      CategoryService.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
+    }
+    return CategoryService.categoriesCache;
+  }
+
   // Cache removed: with multiple EKS pods, per-pod caches cause stale data bugs.
+  // UPDATE: We keep a short-lived static cache for performance on heavy requests.
   clearCache() {
-    // no-op — kept for call-site compatibility
+    CategoryService.categoriesCache = null;
   }
 
   private slugify(text: string) {

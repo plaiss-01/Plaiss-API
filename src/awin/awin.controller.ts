@@ -19,13 +19,7 @@ export class AwinController {
   ) { }
 
   private productsCache = new Map<string, { data: any, timestamp: number }>();
-  private categoriesCache: { 
-    data: any[], 
-    categoryMap: Map<string, any>, 
-    childrenMap: Map<string, any[]>,
-    timestamp: number 
-  } | null = null;
-  private readonly CACHE_TTL = 300000; // 5 minutes for category structure
+  private readonly CACHE_TTL = 30000; // 30 seconds for category structure
   private readonly MAX_CACHE_SIZE = 20; // Maximum number of cached queries
 
   @Post('add-product')
@@ -89,23 +83,7 @@ export class AwinController {
         { category: { contains: search, mode: 'insensitive' } },
       ];
     } else if (category && category !== 'all-products') {
-      const now = Date.now();
-      if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
-        const allCats = await this.categoryService.findAll();
-        const categoryMap = new Map<string, any>();
-        const childrenMap = new Map<string, any[]>();
-        allCats.forEach(cat => {
-          categoryMap.set(cat.id, cat);
-          if (cat.parentId) {
-            const children = childrenMap.get(cat.parentId) || [];
-            children.push(cat);
-            childrenMap.set(cat.parentId, children);
-          }
-        });
-        this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
-      }
-      
-      const { data: allCats, categoryMap, childrenMap } = this.categoriesCache;
+      const { data: allCats, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
 
       // Find the requested categories
       const targetCats = allCats.filter(c => 
@@ -224,7 +202,7 @@ export class AwinController {
     if (total === 0 && category && category !== 'all-products') {
       console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
       
-      const { data: allCats, categoryMap } = this.categoriesCache || {};
+      const { data: allCats, categoryMap } = await this.categoryService.getCategoryStructure();
       if (allCats && categoryMap) {
         const target = allCats.find(c => c.slug.toLowerCase() === category.toLowerCase());
         if (target && target.parentId) {
@@ -408,22 +386,7 @@ export class AwinController {
   @Get('categories')
   @ApiOperation({ summary: 'Get all unique product categories with products' })
   async getCategories() {
-    const now = Date.now();
-    if (!this.categoriesCache || now - this.categoriesCache.timestamp > this.CACHE_TTL) {
-      const allCats = await this.categoryService.findAll();
-      const categoryMap = new Map<string, any>();
-      const childrenMap = new Map<string, any[]>();
-      allCats.forEach(cat => {
-        categoryMap.set(cat.id, cat);
-        if (cat.parentId) {
-          const children = childrenMap.get(cat.parentId) || [];
-          children.push(cat);
-          childrenMap.set(cat.parentId, children);
-        }
-      });
-      this.categoriesCache = { data: allCats, categoryMap, childrenMap, timestamp: now };
-    }
-    const { data: allCategories, categoryMap, childrenMap } = this.categoriesCache;
+    const { data: allCategories, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
 
     const counts = await (this.prisma.product as any).groupBy({
       by: ['internalCategoryId'],
@@ -607,4 +570,5 @@ export class AwinController {
     this.productsCache.clear();
     return result;
   }
+
 }
