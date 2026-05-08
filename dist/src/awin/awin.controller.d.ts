@@ -25,8 +25,18 @@ export declare class AwinController {
         message: string;
         timestamp: number;
     } | undefined>;
+    getMixBrandsProducts(categories: string, limit?: string): Promise<{
+        id: string;
+        name: string;
+        price: number | null;
+        imageUrl: string | null;
+        merchant: string | null;
+        category: string | null;
+        brandName: string | null;
+    }[]>;
     getAllProducts(page?: string, limit?: string, category?: string, subs?: string, search?: string): Promise<any>;
     getMerchants(): Promise<(string | null)[]>;
+    getBrands(category?: string): Promise<(string | null)[]>;
     getCategories(): Promise<any[]>;
     getProductBySlug(slug: string): Promise<any>;
     getProductById(id: string): Promise<any>;

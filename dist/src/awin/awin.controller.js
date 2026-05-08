@@ -50,6 +50,32 @@ let AwinController = class AwinController {
     async getImportStatus(id) {
         return this.statusService.getJob(id);
     }
+    async getMixBrandsProducts(categories, limit = '50') {
+        const categoryNames = categories.split(',').map(c => c.trim()).filter(Boolean);
+        const l = parseInt(limit, 10) || 50;
+        const where = {
+            category: { in: categoryNames, mode: 'insensitive' },
+            AND: [
+                { brandName: { not: null } },
+                { brandName: { not: '' } },
+            ]
+        };
+        const products = await this.prisma.product.findMany({
+            where,
+            take: l,
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                name: true,
+                price: true,
+                imageUrl: true,
+                brandName: true,
+                category: true,
+                merchant: true,
+            }
+        });
+        return products;
+    }
     async getAllProducts(page = '1', limit = '50', category, subs, search) {
         const p = parseInt(page, 10) || 1;
         let l = parseInt(limit, 10) || 50;
@@ -127,12 +153,37 @@ let AwinController = class AwinController {
                 { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
             ];
         }
-        let [data, total] = await Promise.all([
+        let [idResults, total] = await Promise.all([
             this.prisma.product.findMany({
                 where,
-                skip,
-                take: l,
+                select: { id: true, merchant: true },
                 orderBy: { createdAt: 'desc' },
+                take: 2000,
+            }),
+            this.prisma.product.count({ where }),
+        ]);
+        let data = [];
+        if (idResults.length > 0) {
+            const groups = new Map();
+            idResults.forEach((prod) => {
+                const merchant = prod.merchant || 'Unknown';
+                const list = groups.get(merchant) || [];
+                list.push(prod.id);
+                groups.set(merchant, list);
+            });
+            const interleavedIds = [];
+            const maxLen = Math.max(...Array.from(groups.values()).map(a => a.length), 0);
+            for (let i = 0; i < maxLen; i++) {
+                for (const [merchant, ids] of groups.entries()) {
+                    if (i < ids.length) {
+                        interleavedIds.push(ids[i]);
+                    }
+                }
+            }
+            const skip = (p - 1) * l;
+            const pageIds = interleavedIds.slice(skip, skip + l);
+            const fetchedProducts = await this.prisma.product.findMany({
+                where: { id: { in: pageIds } },
                 select: {
                     id: true,
                     name: true,
@@ -157,9 +208,9 @@ let AwinController = class AwinController {
                         }
                     }
                 },
-            }),
-            this.prisma.product.count({ where }),
-        ]);
+            });
+            data = pageIds.map(id => fetchedProducts.find((prod) => prod.id === id)).filter(Boolean);
+        }
         if (total === 0 && category && category !== 'all-products') {
             console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
             const { data: allCats, categoryMap } = await this.categoryService.getCategoryStructure();
@@ -319,6 +370,21 @@ let AwinController = class AwinController {
         });
         return merchants
             .map(m => m.merchant)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+    }
+    async getBrands(category) {
+        const where = {};
+        if (category && category !== 'all-products') {
+            where.category = { equals: category, mode: 'insensitive' };
+        }
+        const brands = await this.prisma.product.findMany({
+            where,
+            distinct: ['merchant'],
+            select: { merchant: true },
+        });
+        return brands
+            .map(b => b.merchant)
             .filter(Boolean)
             .sort((a, b) => a.localeCompare(b));
     }
@@ -491,6 +557,15 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getImportStatus", null);
 __decorate([
+    (0, common_1.Get)('products/mix-brands'),
+    (0, swagger_1.ApiOperation)({ summary: 'Fetch mixed brands products by category names' }),
+    __param(0, (0, common_1.Query)('categories')),
+    __param(1, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "getMixBrandsProducts", null);
+__decorate([
     (0, common_1.Get)('products'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all saved products with pagination' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Return paginated products.' }),
@@ -510,6 +585,14 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getMerchants", null);
+__decorate([
+    (0, common_1.Get)('brands'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all unique brands from products' }),
+    __param(0, (0, common_1.Query)('category')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "getBrands", null);
 __decorate([
     (0, common_1.Get)('categories'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all unique product categories with products' }),

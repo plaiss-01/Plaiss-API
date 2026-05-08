@@ -50,6 +50,41 @@ export class AwinController {
     return this.statusService.getJob(id);
   }
 
+  @Get('products/mix-brands')
+  @ApiOperation({ summary: 'Fetch mixed brands products by category names' })
+  async getMixBrandsProducts(
+    @Query('categories') categories: string,
+    @Query('limit') limit: string = '50',
+  ) {
+    const categoryNames = categories.split(',').map(c => c.trim()).filter(Boolean);
+    const l = parseInt(limit, 10) || 50;
+
+    const where: any = {
+      category: { in: categoryNames, mode: 'insensitive' },
+      AND: [
+        { brandName: { not: null } },
+        { brandName: { not: '' } },
+      ]
+    };
+
+    const products = await this.prisma.product.findMany({
+      where,
+      take: l,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        imageUrl: true,
+        brandName: true,
+        category: true,
+        merchant: true,
+      }
+    });
+
+    return products;
+  }
+
   @Get('products')
   @ApiOperation({ summary: 'Get all saved products with pagination' })
   @ApiResponse({ status: 200, description: 'Return paginated products.' })
@@ -163,12 +198,41 @@ export class AwinController {
       ];
     }
 
-    let [data, total] = await Promise.all([
+    let [idResults, total] = await Promise.all([
       (this.prisma.product as any).findMany({
         where,
-        skip,
-        take: l,
+        select: { id: true, merchant: true },
         orderBy: { createdAt: 'desc' },
+        take: 2000,
+      }),
+      (this.prisma.product as any).count({ where }),
+    ]);
+
+    let data: any[] = [];
+    if (idResults.length > 0) {
+      const groups = new Map<string, string[]>();
+      idResults.forEach((prod: any) => {
+        const merchant = prod.merchant || 'Unknown';
+        const list = groups.get(merchant) || [];
+        list.push(prod.id);
+        groups.set(merchant, list);
+      });
+
+      const interleavedIds: string[] = [];
+      const maxLen = Math.max(...Array.from(groups.values()).map(a => a.length), 0);
+      for (let i = 0; i < maxLen; i++) {
+        for (const [merchant, ids] of groups.entries()) {
+          if (i < ids.length) {
+            interleavedIds.push(ids[i]);
+          }
+        }
+      }
+
+      const skip = (p - 1) * l;
+      const pageIds = interleavedIds.slice(skip, skip + l);
+
+      const fetchedProducts = await (this.prisma.product as any).findMany({
+        where: { id: { in: pageIds } },
         select: {
           id: true,
           name: true,
@@ -193,9 +257,11 @@ export class AwinController {
             }
           }
         },
-      }),
-      (this.prisma.product as any).count({ where }),
-    ]);
+      });
+
+      // Sort back to match interleaved order
+      data = pageIds.map(id => fetchedProducts.find((prod: any) => prod.id === id)).filter(Boolean);
+    }
 
     // FALLBACK: If 0 products found for the specific category/hierarchy,
     // try a broader search using individual words from the category name.
@@ -379,6 +445,24 @@ export class AwinController {
     });
     return merchants
       .map(m => m.merchant)
+      .filter(Boolean)
+      .sort((a, b) => a!.localeCompare(b!));
+  }
+
+  @Get('brands')
+  @ApiOperation({ summary: 'Get all unique brands from products' })
+  async getBrands(@Query('category') category?: string) {
+    const where: any = {};
+    if (category && category !== 'all-products') {
+      where.category = { equals: category, mode: 'insensitive' };
+    }
+    const brands = await this.prisma.product.findMany({
+      where,
+      distinct: ['merchant'],
+      select: { merchant: true },
+    });
+    return brands
+      .map(b => b.merchant)
       .filter(Boolean)
       .sort((a, b) => a!.localeCompare(b!));
   }
