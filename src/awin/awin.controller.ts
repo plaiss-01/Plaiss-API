@@ -29,6 +29,8 @@ export class AwinController {
     imageUrl: true,
     awThumbUrl: true,
     largeImage: true,
+    alternateImage: true,
+    merchantThumbUrl: true,
     category: true,
     slug: true,
     merchant: true,
@@ -61,6 +63,112 @@ export class AwinController {
       },
     },
   };
+
+  private isUsableImageValue(value?: string | null): value is string {
+    if (!value) return false;
+    const trimmed = value.trim();
+    return !!trimmed && !/^(?:n\/?a|na|none|null|undefined|no\s+image(?:\s+available)?|image\s+(?:not\s+)?available|not\s+available|missing|-+)$/i.test(trimmed);
+  }
+
+  private decodeProductServeSource(value?: string | null): string {
+    if (!value) return '';
+
+    let decoded = value.trim();
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break;
+        decoded = next;
+      } catch {
+        break;
+      }
+    }
+
+    if (/^ssl:/i.test(decoded)) {
+      return `https://${decoded.replace(/^ssl:\/?/i, '').replace(/^\/+/, '')}`;
+    }
+    if (/^https?:\/\//i.test(decoded)) {
+      return decoded.replace(/^http:\/\//i, 'https://');
+    }
+    if (/^\/\//.test(decoded)) {
+      return `https:${decoded}`;
+    }
+    if (/^[a-z0-9.-]+\//i.test(decoded)) {
+      return `https://${decoded}`;
+    }
+
+    return '';
+  }
+
+  private normalizeProductImageUrl(value?: string | null, size: number = 900): string {
+    if (!this.isUsableImageValue(value)) return '';
+
+    const secureValue = value.trim().replace(/^http:\/\//i, 'https://');
+    try {
+      const parsed = new URL(secureValue);
+      if (parsed.hostname.includes('productserve.com')) {
+        const directSource = this.decodeProductServeSource(parsed.searchParams.get('url'));
+        if (directSource) return directSource;
+
+        parsed.searchParams.set('w', String(size));
+        parsed.searchParams.set('h', String(size));
+        if (!parsed.searchParams.has('bg')) parsed.searchParams.set('bg', 'white');
+        if (!parsed.searchParams.has('t')) parsed.searchParams.set('t', 'letterbox');
+        return parsed.toString();
+      }
+      return secureValue;
+    } catch {
+      return secureValue;
+    }
+  }
+
+  private getBestProductImage(product: any): string {
+    const candidates = [
+      product?.largeImage,
+      product?.imageUrl,
+      product?.alternateImage,
+      product?.merchantThumbUrl,
+      product?.awThumbUrl,
+    ];
+
+    for (const candidate of candidates) {
+      const image = this.normalizeProductImageUrl(candidate);
+      if (image) return image;
+    }
+
+    return '';
+  }
+
+  private enhanceProductImages(product: any) {
+    if (!product) return product;
+
+    const img = this.getBestProductImage(product);
+    const colorVariants = (product.colorVariants || []).map((variant: any) => ({
+      ...variant,
+      imageUrl: this.normalizeProductImageUrl(variant.imageUrl) || null,
+    }));
+
+    return {
+      ...product,
+      imageUrl: img,
+      image: img,
+      images: img ? [img] : [],
+      colorVariants,
+      colors: [
+        ...(product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : []),
+        ...colorVariants.map((variant: any) => ({
+          name: variant.colorName,
+          hex: variant.colorName,
+          imageUrl: variant.imageUrl,
+          productUrl: variant.productUrl,
+        })),
+      ],
+      normalizedAttributes: (product.attributes || []).reduce((acc: any, attr: any) => {
+        acc[attr.attribute.name] = attr.attributeValue.value;
+        return acc;
+      }, {}),
+    };
+  }
 
   @Get('pipeline/tables')
   @ApiOperation({ summary: 'Get AWIN raw/dev/prod pipeline table names' })
@@ -204,13 +312,17 @@ export class AwinController {
         name: true,
         price: true,
         imageUrl: true,
+        awThumbUrl: true,
+        largeImage: true,
+        alternateImage: true,
+        merchantThumbUrl: true,
         brandName: true,
         category: true,
         merchant: true,
-      }
+        }
     });
 
-    return products;
+    return products.map((product: any) => this.enhanceProductImages(product));
   }
 
   @Get('products')
@@ -451,30 +563,7 @@ export class AwinController {
       }
     }
 
-    const products = data.map((p: any) => {
-      const img = p.imageUrl || p.largeImage || p.awThumbUrl || '';
-      return {
-        ...p,
-        imageUrl: img,
-        // Ensure frontend gets 'image' or 'images' if it expects them
-        image: img,
-        images: img ? [img] : [],
-        colors: [
-          ...(p.colour ? [{ name: p.colour, hex: p.colour, imageUrl: img, productUrl: p.productUrl }] : []),
-          ...(p.colorVariants || []).map((v: any) => ({
-            name: v.colorName,
-            hex: v.colorName,
-            imageUrl: v.imageUrl,
-            productUrl: v.productUrl
-          }))
-        ],
-        // Flatten attributes for easier frontend consumption
-        normalizedAttributes: (p.attributes || []).reduce((acc: any, attr: any) => {
-          acc[attr.attribute.name] = attr.attributeValue.value;
-          return acc;
-        }, {}),
-      };
-    });
+    const products = data.map((p: any) => this.enhanceProductImages(p));
 
     const result = {
       data: products,
@@ -668,14 +757,14 @@ export class AwinController {
         }
       }
     });
-    return product;
+    return this.enhanceProductImages(product);
   }
 
   @Get('products/:id')
   @ApiOperation({ summary: 'Get a product by ID' })
   @ApiResponse({ status: 200, description: 'Return the product.' })
   async getProductById(@Param('id') id: string) {
-    return (this.prisma.product as any).findUnique({ 
+    const product = await (this.prisma.product as any).findUnique({ 
       where: { id },
       include: {
         colorVariants: true,
@@ -687,6 +776,7 @@ export class AwinController {
         }
       }
     });
+    return this.enhanceProductImages(product);
   }
 
   @Patch('products/:id')

@@ -44,6 +44,8 @@ let AwinController = class AwinController {
         imageUrl: true,
         awThumbUrl: true,
         largeImage: true,
+        alternateImage: true,
+        merchantThumbUrl: true,
         category: true,
         slug: true,
         merchant: true,
@@ -76,6 +78,109 @@ let AwinController = class AwinController {
             },
         },
     };
+    isUsableImageValue(value) {
+        if (!value)
+            return false;
+        const trimmed = value.trim();
+        return !!trimmed && !/^(?:n\/?a|na|none|null|undefined|no\s+image(?:\s+available)?|image\s+(?:not\s+)?available|not\s+available|missing|-+)$/i.test(trimmed);
+    }
+    decodeProductServeSource(value) {
+        if (!value)
+            return '';
+        let decoded = value.trim();
+        for (let i = 0; i < 2; i += 1) {
+            try {
+                const next = decodeURIComponent(decoded);
+                if (next === decoded)
+                    break;
+                decoded = next;
+            }
+            catch {
+                break;
+            }
+        }
+        if (/^ssl:/i.test(decoded)) {
+            return `https://${decoded.replace(/^ssl:\/?/i, '').replace(/^\/+/, '')}`;
+        }
+        if (/^https?:\/\//i.test(decoded)) {
+            return decoded.replace(/^http:\/\//i, 'https://');
+        }
+        if (/^\/\//.test(decoded)) {
+            return `https:${decoded}`;
+        }
+        if (/^[a-z0-9.-]+\//i.test(decoded)) {
+            return `https://${decoded}`;
+        }
+        return '';
+    }
+    normalizeProductImageUrl(value, size = 900) {
+        if (!this.isUsableImageValue(value))
+            return '';
+        const secureValue = value.trim().replace(/^http:\/\//i, 'https://');
+        try {
+            const parsed = new URL(secureValue);
+            if (parsed.hostname.includes('productserve.com')) {
+                const directSource = this.decodeProductServeSource(parsed.searchParams.get('url'));
+                if (directSource)
+                    return directSource;
+                parsed.searchParams.set('w', String(size));
+                parsed.searchParams.set('h', String(size));
+                if (!parsed.searchParams.has('bg'))
+                    parsed.searchParams.set('bg', 'white');
+                if (!parsed.searchParams.has('t'))
+                    parsed.searchParams.set('t', 'letterbox');
+                return parsed.toString();
+            }
+            return secureValue;
+        }
+        catch {
+            return secureValue;
+        }
+    }
+    getBestProductImage(product) {
+        const candidates = [
+            product?.largeImage,
+            product?.imageUrl,
+            product?.alternateImage,
+            product?.merchantThumbUrl,
+            product?.awThumbUrl,
+        ];
+        for (const candidate of candidates) {
+            const image = this.normalizeProductImageUrl(candidate);
+            if (image)
+                return image;
+        }
+        return '';
+    }
+    enhanceProductImages(product) {
+        if (!product)
+            return product;
+        const img = this.getBestProductImage(product);
+        const colorVariants = (product.colorVariants || []).map((variant) => ({
+            ...variant,
+            imageUrl: this.normalizeProductImageUrl(variant.imageUrl) || null,
+        }));
+        return {
+            ...product,
+            imageUrl: img,
+            image: img,
+            images: img ? [img] : [],
+            colorVariants,
+            colors: [
+                ...(product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : []),
+                ...colorVariants.map((variant) => ({
+                    name: variant.colorName,
+                    hex: variant.colorName,
+                    imageUrl: variant.imageUrl,
+                    productUrl: variant.productUrl,
+                })),
+            ],
+            normalizedAttributes: (product.attributes || []).reduce((acc, attr) => {
+                acc[attr.attribute.name] = attr.attributeValue.value;
+                return acc;
+            }, {}),
+        };
+    }
     async getPipelineTables() {
         return this.awinService.getAwinPipelineTableSummary();
     }
@@ -166,12 +271,16 @@ let AwinController = class AwinController {
                 name: true,
                 price: true,
                 imageUrl: true,
+                awThumbUrl: true,
+                largeImage: true,
+                alternateImage: true,
+                merchantThumbUrl: true,
                 brandName: true,
                 category: true,
                 merchant: true,
             }
         });
-        return products;
+        return products.map((product) => this.enhanceProductImages(product));
     }
     async getAllProducts(page = '1', limit = '50', category, subs, search) {
         const p = parseInt(page, 10) || 1;
@@ -356,28 +465,7 @@ let AwinController = class AwinController {
                 }
             }
         }
-        const products = data.map((p) => {
-            const img = p.imageUrl || p.largeImage || p.awThumbUrl || '';
-            return {
-                ...p,
-                imageUrl: img,
-                image: img,
-                images: img ? [img] : [],
-                colors: [
-                    ...(p.colour ? [{ name: p.colour, hex: p.colour, imageUrl: img, productUrl: p.productUrl }] : []),
-                    ...(p.colorVariants || []).map((v) => ({
-                        name: v.colorName,
-                        hex: v.colorName,
-                        imageUrl: v.imageUrl,
-                        productUrl: v.productUrl
-                    }))
-                ],
-                normalizedAttributes: (p.attributes || []).reduce((acc, attr) => {
-                    acc[attr.attribute.name] = attr.attributeValue.value;
-                    return acc;
-                }, {}),
-            };
-        });
+        const products = data.map((p) => this.enhanceProductImages(p));
         const result = {
             data: products,
             meta: {
@@ -526,10 +614,10 @@ let AwinController = class AwinController {
                 }
             }
         });
-        return product;
+        return this.enhanceProductImages(product);
     }
     async getProductById(id) {
-        return this.prisma.product.findUnique({
+        const product = await this.prisma.product.findUnique({
             where: { id },
             include: {
                 colorVariants: true,
@@ -541,6 +629,7 @@ let AwinController = class AwinController {
                 }
             }
         });
+        return this.enhanceProductImages(product);
     }
     async updateProduct(id, updateProductDto) {
         return this.prisma.product.update({

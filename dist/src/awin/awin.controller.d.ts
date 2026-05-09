@@ -14,6 +14,11 @@ export declare class AwinController {
     private readonly CACHE_TTL;
     private readonly MAX_CACHE_SIZE;
     private readonly productListSelect;
+    private isUsableImageValue;
+    private decodeProductServeSource;
+    private normalizeProductImageUrl;
+    private getBestProductImage;
+    private enhanceProductImages;
     getPipelineTables(): Promise<{
         counts: {
             raw: number;
@@ -71,15 +76,7 @@ export declare class AwinController {
         timestamp: number;
         result?: Record<string, unknown>;
     } | undefined>;
-    getMixBrandsProducts(categories: string, limit?: string): Promise<{
-        id: string;
-        name: string;
-        price: number | null;
-        imageUrl: string | null;
-        merchant: string | null;
-        category: string | null;
-        brandName: string | null;
-    }[]>;
+    getMixBrandsProducts(categories: string, limit?: string): Promise<any[]>;
     getAllProducts(page?: string, limit?: string, category?: string, subs?: string, search?: string): Promise<any>;
     getMerchants(): Promise<(string | null)[]>;
     getBrands(category?: string): Promise<(string | null)[]>;
