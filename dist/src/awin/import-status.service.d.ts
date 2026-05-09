@@ -9,9 +9,10 @@ export declare class ImportStatusService {
         status: string;
         message: string;
         timestamp: number;
+        result?: Record<string, unknown>;
     } | undefined;
-    updateJob(id: string, current: number, message?: string): void;
-    completeJob(id: string, message: string): void;
+    updateJob(id: string, current: number, message?: string, total?: number): void;
+    completeJob(id: string, message: string, result?: Record<string, unknown>): void;
     failJob(id: string, message: string): void;
     private cleanup;
 }

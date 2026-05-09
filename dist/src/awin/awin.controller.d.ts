@@ -13,6 +13,51 @@ export declare class AwinController {
     private productsCache;
     private readonly CACHE_TTL;
     private readonly MAX_CACHE_SIZE;
+    private readonly productListSelect;
+    getPipelineTables(): Promise<{
+        counts: {
+            raw: number;
+            dev: number;
+            prod: number;
+        };
+        total: number;
+        raw: string;
+        dev: string;
+        prod: string;
+        note: string;
+    }>;
+    extractRaw(body: {
+        url: string;
+        replace?: boolean;
+    }): Promise<{
+        jobId: string;
+        message: string;
+        table: string;
+    }>;
+    uploadRawCsv(file: Express.Multer.File, body: {
+        replace?: string;
+    }): Promise<{
+        jobId: string;
+        message: string;
+        table: string;
+    }>;
+    transformDev(body: {
+        replace?: boolean;
+    }): Promise<{
+        jobId: string;
+        message: string;
+        sourceTable: string;
+        targetTable: string;
+    }>;
+    promoteProd(body: {
+        replace?: boolean;
+        syncProductTable?: boolean;
+    }): Promise<{
+        jobId: string;
+        message: string;
+        sourceTable: string;
+        targetTable: string;
+    }>;
     addProduct(createProductDto: CreateProductDto): Promise<any>;
     uploadCsv(file: Express.Multer.File): Promise<{
         jobId: string;
@@ -24,6 +69,7 @@ export declare class AwinController {
         status: string;
         message: string;
         timestamp: number;
+        result?: Record<string, unknown>;
     } | undefined>;
     getMixBrandsProducts(categories: string, limit?: string): Promise<{
         id: string;

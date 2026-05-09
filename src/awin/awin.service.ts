@@ -6,6 +6,7 @@ import * as cheerio from 'cheerio';
 import * as csv from 'fast-csv';
 import * as zlib from 'zlib';
 import { Readable } from 'stream';
+import { randomUUID } from 'crypto';
 
 import { ImportStatusService } from './import-status.service';
 import { CategoryService } from '../category/category.service';
@@ -13,6 +14,104 @@ import { CategoryService } from '../category/category.service';
 @Injectable()
 export class AwinService {
   private readonly logger = new Logger(AwinService.name);
+  private readonly awinPipelineTables = {
+    raw: 'AWIN_AFFILIAT_PRODUCTS_DATA_RAW',
+    dev: 'AWIN_AFFILIAT_PRODUCTS_DATA_DEV',
+    prod: 'AWIN_AFFILIAT_PRODUCTS_DATA_PROD',
+  };
+  private readonly rawInsertBatchSize = 500;
+  private readonly validSizeLabels = new Set([
+    '1 Seater',
+    '2 Seater',
+    '3 Seater',
+    '4 Seater',
+    'Corner',
+    'Chair',
+    'Footstools',
+    'Sofa Bed',
+  ]);
+  private readonly standardColourMap: Record<string, string> = {
+    black: 'Black',
+    white: 'White',
+    'off white': 'White',
+    'off-white': 'White',
+    'snow white': 'White',
+    'optical white': 'White',
+    grey: 'Grey',
+    gray: 'Grey',
+    'light grey': 'Grey',
+    'dark grey': 'Grey',
+    'medium grey': 'Grey',
+    'silver grey': 'Grey',
+    silver: 'Grey',
+    steel: 'Grey',
+    ash: 'Grey',
+    fossil: 'Grey',
+    stone: 'Grey',
+    iron: 'Grey',
+    slate: 'Grey',
+    pewter: 'Grey',
+    dove: 'Grey',
+    chalk: 'Grey',
+    cloud: 'Grey',
+    charcoal: 'Grey',
+    anthracite: 'Grey',
+    brown: 'Brown',
+    'dark brown': 'Brown',
+    chocolate: 'Brown',
+    tan: 'Brown',
+    saddle: 'Brown',
+    cognac: 'Brown',
+    'dark cognac': 'Brown',
+    caramel: 'Brown',
+    mocha: 'Brown',
+    latte: 'Brown',
+    rust: 'Brown',
+    wenge: 'Brown',
+    walnut: 'Brown',
+    oak: 'Brown',
+    truffle: 'Brown',
+    biscuit: 'Brown',
+    taupe: 'Brown',
+    beige: 'Beige',
+    'light beige': 'Beige',
+    'medium beige': 'Beige',
+    'dark beige': 'Beige',
+    cream: 'Beige',
+    ivory: 'Beige',
+    natural: 'Beige',
+    sahara: 'Beige',
+    greige: 'Beige',
+    blue: 'Blue',
+    'light blue': 'Blue',
+    'dark blue': 'Blue',
+    'midnight blue': 'Blue',
+    navy: 'Blue',
+    azul: 'Blue',
+    teal: 'Blue',
+    turquoise: 'Blue',
+    denim: 'Blue',
+    peacock: 'Blue',
+    green: 'Green',
+    'acid green': 'Green',
+    olive: 'Green',
+    red: 'Red',
+    ruby: 'Red',
+    wine: 'Red',
+    yellow: 'Yellow',
+    mustard: 'Yellow',
+    ochre: 'Yellow',
+    sunflower: 'Yellow',
+    orange: 'Orange',
+    cinnamon: 'Orange',
+    pink: 'Pink',
+    purple: 'Purple',
+    gold: 'Gold',
+    multicoloured: 'Multicolour',
+    multicolored: 'Multicolour',
+    'multi coloured': 'Multicolour',
+    'multi colored': 'Multicolour',
+  };
 
   constructor(
     private readonly httpService: HttpService,
@@ -241,6 +340,1223 @@ export class AwinService {
       this.statusService.failJob(jobId, error.message);
       throw error;
     }
+  }
+
+  getAwinPipelineTableNames() {
+    const schema = 'public';
+    return {
+      raw: `${schema}."${this.awinPipelineTables.raw}"`,
+      dev: `${schema}."${this.awinPipelineTables.dev}"`,
+      prod: `${schema}."${this.awinPipelineTables.prod}"`,
+      note: 'RAW is the direct AWIN extraction table, DEV is transformed for review, and PROD is the reviewed table Plaiss should read from.',
+    };
+  }
+
+  async getAwinPipelineTableSummary() {
+    await this.ensureAwinPipelineTables();
+
+    const [raw, dev, prod] = await Promise.all([
+      this.countAwinPipelineRows(this.awinPipelineTables.raw),
+      this.countAwinPipelineRows(this.awinPipelineTables.dev),
+      this.countAwinPipelineRows(this.awinPipelineTables.prod),
+    ]);
+
+    return {
+      ...this.getAwinPipelineTableNames(),
+      counts: { raw, dev, prod },
+      total: raw + dev + prod,
+    };
+  }
+
+  async extractAwinFeedToRaw(url: string, jobId?: string, replace = true) {
+    await this.ensureAwinPipelineTables();
+
+    if (replace) {
+      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
+    }
+
+    const feedUrl = this.withAwinDownloadDefaults(url);
+    this.logger.log(`Extracting AWIN feed to RAW table: ${feedUrl}`);
+
+    const response = await firstValueFrom(
+      this.httpService.get(feedUrl, {
+        responseType: 'stream',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      }),
+    );
+
+    const stream = response.data as Readable;
+    const isGzip =
+      feedUrl.includes('compression/gzip') ||
+      response.headers['content-encoding'] === 'gzip' ||
+      feedUrl.endsWith('.gz');
+    const parserStream = isGzip ? stream.pipe(zlib.createGunzip()) : stream;
+    const parser = parserStream.pipe(csv.parse({ headers: true }));
+
+    let count = 0;
+    let batch: Array<{ row: any; rowNumber: number }> = [];
+    for await (const row of parser) {
+      count++;
+      batch.push({ row, rowNumber: count });
+
+      if (batch.length >= this.rawInsertBatchSize) {
+        await this.insertRawAwinRows(batch, feedUrl, jobId);
+        batch = [];
+      }
+
+      if (jobId && count % 1000 === 0) {
+        this.statusService.updateJob(jobId, count, `Extracted ${count} AWIN rows to RAW...`);
+      }
+    }
+
+    if (batch.length > 0) {
+      await this.insertRawAwinRows(batch, feedUrl, jobId);
+    }
+
+    if (jobId) {
+      this.statusService.completeJob(jobId, `Extracted ${count} AWIN rows to RAW.`);
+    }
+
+    return {
+      message: 'AWIN extraction complete',
+      table: this.getAwinPipelineTableNames().raw,
+      count,
+      replaced: replace,
+    };
+  }
+
+  async extractCsvFileToRaw(fileBuffer: Buffer, jobId: string, replace = true) {
+    await this.ensureAwinPipelineTables();
+
+    if (replace) {
+      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
+    }
+
+    const parser = Readable.from(fileBuffer).pipe(csv.parse({ headers: true }));
+    let count = 0;
+    let batch: Array<{ row: any; rowNumber: number }> = [];
+
+    for await (const row of parser) {
+      count++;
+      batch.push({ row, rowNumber: count });
+
+      if (batch.length >= this.rawInsertBatchSize) {
+        await this.insertRawAwinRows(batch, 'manual-csv-upload', jobId);
+        batch = [];
+      }
+
+      if (count % 1000 === 0) {
+        this.statusService.updateJob(jobId, count, `Extracted ${count} CSV rows to RAW...`);
+      }
+    }
+
+    if (batch.length > 0) {
+      await this.insertRawAwinRows(batch, 'manual-csv-upload', jobId);
+    }
+
+    this.statusService.completeJob(jobId, `Extracted ${count} CSV rows to RAW.`);
+    return { table: this.getAwinPipelineTableNames().raw, count, replaced: replace };
+  }
+
+  async transformRawToDev(replace = true, jobId?: string) {
+    await this.ensureAwinPipelineTables();
+
+    if (replace) {
+      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.dev}"`);
+    }
+
+    const [{ count: rawCount }] = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.raw}"`,
+    );
+    const rawTotal = Number(rawCount) || 0;
+
+    if (jobId) {
+      this.statusService.updateJob(
+        jobId,
+        0,
+        `Found ${rawTotal} RAW rows. Reading the first RAW batch...`,
+        rawTotal || 1,
+      );
+    }
+
+    let transformed = 0;
+    let skipped = 0;
+    const mappedRows: any[] = [];
+    let rawProcessed = 0;
+    let lastRowNumber = 0;
+    const batchSize = 10000;
+
+    while (rawProcessed < rawTotal) {
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT row_number, raw_row FROM "${this.awinPipelineTables.raw}"
+         WHERE row_number > $1
+         ORDER BY row_number ASC
+         LIMIT $2`,
+        lastRowNumber,
+        batchSize,
+      );
+
+      if (rows.length === 0) break;
+
+      for (const item of rows) {
+        const mapped = this.mapAwinRawRowToPipelineRow(item.raw_row || {});
+        if (!mapped) {
+          skipped++;
+        } else {
+          mappedRows.push(mapped);
+        }
+      }
+
+      rawProcessed += rows.length;
+      lastRowNumber = Number(rows[rows.length - 1].row_number) || lastRowNumber;
+
+      if (jobId) {
+        this.statusService.updateJob(
+          jobId,
+          rawProcessed,
+          `Mapped ${rawProcessed} of ${rawTotal} RAW rows. ${mappedRows.length} valid products found...`,
+          rawTotal || rows.length || 1,
+        );
+      }
+
+      await this.yieldToEventLoop();
+    }
+
+    this.addVariantNumbers(mappedRows);
+
+    const totalWork = rawTotal + mappedRows.length;
+    if (jobId) {
+      this.statusService.updateJob(
+        jobId,
+        rawProcessed,
+        `Saving ${mappedRows.length} transformed DEV rows...`,
+        totalWork || 1,
+      );
+    }
+
+    const insertBatchSize = 1000;
+    const fields = [
+      'awProductId', 'merchantProductId', 'productName', 'slug', 'description', 'price',
+      'currency', 'imageUrl', 'productUrl', 'merchantName', 'categoryName', 'merchantCategory',
+      'categoryId', 'brandName', 'colour', 'productModel', 'productType', 'productModelClean',
+      'colourClean', 'sizeStockStatusClean', 'isRecliner', 'isSofaBed', 'baseSku',
+      'colourVariantNumber', 'originalPriceClean', 'discountedPriceClean', 'saving',
+      'salesDiscount', 'rawRow'
+    ];
+
+    for (let i = 0; i < mappedRows.length; i += insertBatchSize) {
+      const chunk = mappedRows.slice(i, i + insertBatchSize);
+      
+      const values: any[] = [];
+      const placeholders = chunk.map((row, rowIndex) => {
+        const offset = rowIndex * fields.length;
+        fields.forEach((field) => {
+          let value = row[field];
+          if (field === 'rawRow') {
+            value = JSON.stringify(value);
+          } else if (value === undefined) {
+            value = null;
+          }
+          values.push(value);
+        });
+        
+        const rowPlaceholders = fields.map((_, fieldIndex) => {
+          const idx = offset + fieldIndex + 1;
+          if (fields[fieldIndex] === 'rawRow') {
+            return `$${idx}::jsonb`;
+          }
+          return `$${idx}`;
+        });
+        
+        return `(${rowPlaceholders.join(', ')})`;
+      });
+
+      const query = `
+        INSERT INTO "${this.awinPipelineTables.dev}" (
+          aw_product_id, merchant_product_id, product_name, slug, description, search_price,
+          currency, image_url, product_url, merchant_name, category_name, merchant_category,
+          category_id, brand_name, colour, product_model, product_type, product_model_clean,
+          colour_clean, size_stock_status_clean, is_recliner, is_sofa_bed, base_sku,
+          colour_variant_number, original_price_clean, discounted_price_clean, saving,
+          sales_discount, raw_row
+        )
+        VALUES ${placeholders.join(', ')}
+        ON CONFLICT (aw_product_id) DO UPDATE SET
+          merchant_product_id = EXCLUDED.merchant_product_id,
+          product_name = EXCLUDED.product_name,
+          slug = EXCLUDED.slug,
+          description = EXCLUDED.description,
+          search_price = EXCLUDED.search_price,
+          currency = EXCLUDED.currency,
+          image_url = EXCLUDED.image_url,
+          product_url = EXCLUDED.product_url,
+          merchant_name = EXCLUDED.merchant_name,
+          category_name = EXCLUDED.category_name,
+          merchant_category = EXCLUDED.merchant_category,
+          category_id = EXCLUDED.category_id,
+          brand_name = EXCLUDED.brand_name,
+          colour = EXCLUDED.colour,
+          product_model = EXCLUDED.product_model,
+          product_type = EXCLUDED.product_type,
+          product_model_clean = EXCLUDED.product_model_clean,
+          colour_clean = EXCLUDED.colour_clean,
+          size_stock_status_clean = EXCLUDED.size_stock_status_clean,
+          is_recliner = EXCLUDED.is_recliner,
+          is_sofa_bed = EXCLUDED.is_sofa_bed,
+          base_sku = EXCLUDED.base_sku,
+          colour_variant_number = EXCLUDED.colour_variant_number,
+          original_price_clean = EXCLUDED.original_price_clean,
+          discounted_price_clean = EXCLUDED.discounted_price_clean,
+          saving = EXCLUDED.saving,
+          sales_discount = EXCLUDED.sales_discount,
+          raw_row = EXCLUDED.raw_row,
+          transformed_at = NOW()
+      `;
+
+      await this.prisma.$executeRawUnsafe(query, ...values);
+      transformed += chunk.length;
+
+      const processed = rawTotal + transformed;
+      if (jobId) {
+        this.statusService.updateJob(
+          jobId,
+          processed,
+          `Saved ${transformed} products to DEV...`,
+          totalWork || 1,
+        );
+      }
+    }
+
+    const result = {
+      message: 'RAW transformed to DEV',
+      sourceTable: this.getAwinPipelineTableNames().raw,
+      targetTable: this.getAwinPipelineTableNames().dev,
+      transformed,
+      skipped,
+      rawRows: rawProcessed,
+    };
+
+    if (jobId) {
+      this.statusService.completeJob(
+        jobId,
+        `DEV transform complete: ${transformed} transformed, ${skipped} skipped.`,
+        result,
+      );
+    }
+
+    return result;
+  }
+
+  async loadDevToProd(replace = true, syncProductTable = true, jobId?: string) {
+    await this.ensureAwinPipelineTables();
+
+    if (replace) {
+      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.prod}"`);
+    }
+
+    const [{ count: devRows }] = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.dev}"`,
+    );
+
+    if (jobId) {
+      this.statusService.updateJob(
+        jobId,
+        0,
+        `Copying ${devRows} reviewed DEV rows to PROD...`,
+        syncProductTable ? (devRows || 1) * 2 : devRows || 1,
+      );
+    }
+
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "${this.awinPipelineTables.prod}" (
+        aw_product_id, merchant_product_id, product_name, slug, description, search_price,
+        currency, image_url, product_url, merchant_name, category_name, merchant_category,
+        category_id, brand_name, colour, product_model, product_type, product_model_clean,
+        colour_clean, size_stock_status_clean, is_recliner, is_sofa_bed, base_sku,
+        colour_variant_number, original_price_clean, discounted_price_clean, saving,
+        sales_discount, raw_row, transformed_at, loaded_at
+      )
+      SELECT
+        aw_product_id, merchant_product_id, product_name, slug, description, search_price,
+        currency, image_url, product_url, merchant_name, category_name, merchant_category,
+        category_id, brand_name, colour, product_model, product_type, product_model_clean,
+        colour_clean, size_stock_status_clean, is_recliner, is_sofa_bed, base_sku,
+        colour_variant_number, original_price_clean, discounted_price_clean, saving,
+        sales_discount, raw_row, transformed_at, NOW()
+      FROM "${this.awinPipelineTables.dev}"
+      ON CONFLICT (aw_product_id) DO UPDATE SET
+        merchant_product_id = EXCLUDED.merchant_product_id,
+        product_name = EXCLUDED.product_name,
+        slug = EXCLUDED.slug,
+        description = EXCLUDED.description,
+        search_price = EXCLUDED.search_price,
+        currency = EXCLUDED.currency,
+        image_url = EXCLUDED.image_url,
+        product_url = EXCLUDED.product_url,
+        merchant_name = EXCLUDED.merchant_name,
+        category_name = EXCLUDED.category_name,
+        merchant_category = EXCLUDED.merchant_category,
+        category_id = EXCLUDED.category_id,
+        brand_name = EXCLUDED.brand_name,
+        colour = EXCLUDED.colour,
+        product_model = EXCLUDED.product_model,
+        product_type = EXCLUDED.product_type,
+        product_model_clean = EXCLUDED.product_model_clean,
+        colour_clean = EXCLUDED.colour_clean,
+        size_stock_status_clean = EXCLUDED.size_stock_status_clean,
+        is_recliner = EXCLUDED.is_recliner,
+        is_sofa_bed = EXCLUDED.is_sofa_bed,
+        base_sku = EXCLUDED.base_sku,
+        colour_variant_number = EXCLUDED.colour_variant_number,
+        original_price_clean = EXCLUDED.original_price_clean,
+        discounted_price_clean = EXCLUDED.discounted_price_clean,
+        saving = EXCLUDED.saving,
+        sales_discount = EXCLUDED.sales_discount,
+        raw_row = EXCLUDED.raw_row,
+        transformed_at = EXCLUDED.transformed_at,
+        loaded_at = NOW()
+    `);
+
+    const [{ count }] = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.prod}"`,
+    );
+
+    if (jobId) {
+      this.statusService.updateJob(
+        jobId,
+        devRows,
+        syncProductTable
+          ? `PROD has ${count} rows. Syncing Plaiss products...`
+          : `PROD has ${count} rows.`,
+      );
+    }
+
+    const syncedProducts = syncProductTable
+      ? await this.syncProductModelFromAwinProd(jobId, devRows, (devRows || 1) * 2)
+      : 0;
+
+    const result = {
+      message: 'DEV loaded to PROD',
+      sourceTable: this.getAwinPipelineTableNames().dev,
+      targetTable: this.getAwinPipelineTableNames().prod,
+      devRows,
+      prodRows: count,
+      syncedProducts,
+      replaced: replace,
+    };
+
+    if (jobId) {
+      this.statusService.completeJob(
+        jobId,
+        `PROD promotion complete: ${count} PROD rows, ${syncedProducts} products synced.`,
+        result,
+      );
+    }
+
+    return result;
+  }
+
+  private withAwinDownloadDefaults(url: string) {
+    if (url.includes('datafeed/download') && !url.includes('/columns/') && !url.includes('columns=')) {
+      if (url.includes('download.php')) {
+        const separator = url.includes('?') ? '&' : '?';
+        return `${url}${separator}columns=any&format=csv&compression=gzip`;
+      }
+
+      return `${url.replace(/\/$/, '')}/columns/any/format/csv/compression/gzip/`;
+    }
+
+    return url;
+  }
+
+  private async ensureAwinPipelineTables() {
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "${this.awinPipelineTables.raw}" (
+        id TEXT PRIMARY KEY,
+        row_number INTEGER NOT NULL,
+        source_url TEXT,
+        import_job_id TEXT,
+        raw_row JSONB NOT NULL,
+        imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "idx_awin_raw_row_number"
+       ON "${this.awinPipelineTables.raw}" (row_number)`,
+    );
+
+    await this.prisma.$executeRawUnsafe(
+      this.createPipelineProductTableSql(this.awinPipelineTables.dev, false),
+    );
+    await this.prisma.$executeRawUnsafe(
+      this.createPipelineProductTableSql(this.awinPipelineTables.prod, true),
+    );
+    await this.ensurePipelineProductColumns(this.awinPipelineTables.dev, false);
+    await this.ensurePipelineProductColumns(this.awinPipelineTables.prod, true);
+  }
+
+  private async countAwinPipelineRows(tableName: string) {
+    const [{ count }] = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS count FROM "${tableName}"`,
+    );
+
+    return Number(count) || 0;
+  }
+
+  private async yieldToEventLoop() {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
+  private async ensurePipelineProductColumns(tableName: string, includeLoadedAt: boolean) {
+    const columns = [
+      ['product_model_clean', 'TEXT'],
+      ['colour_clean', 'TEXT'],
+      ['size_stock_status_clean', 'TEXT'],
+      ['is_recliner', 'TEXT'],
+      ['is_sofa_bed', 'TEXT'],
+      ['base_sku', 'TEXT'],
+      ['colour_variant_number', 'INTEGER'],
+      ['original_price_clean', 'DOUBLE PRECISION'],
+      ['discounted_price_clean', 'DOUBLE PRECISION'],
+      ['saving', 'DOUBLE PRECISION'],
+      ['sales_discount', 'TEXT'],
+      ...(includeLoadedAt ? [['loaded_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()']] : []),
+    ];
+
+    for (const [column, type] of columns) {
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TABLE "${tableName}" ADD COLUMN IF NOT EXISTS ${column} ${type}`,
+      );
+    }
+  }
+
+  private createPipelineProductTableSql(tableName: string, includeLoadedAt: boolean) {
+    return `
+      CREATE TABLE IF NOT EXISTS "${tableName}" (
+        aw_product_id TEXT PRIMARY KEY,
+        merchant_product_id TEXT,
+        product_name TEXT NOT NULL,
+        slug TEXT,
+        description TEXT,
+        search_price DOUBLE PRECISION,
+        currency TEXT,
+        image_url TEXT,
+        product_url TEXT,
+        merchant_name TEXT,
+        category_name TEXT,
+        merchant_category TEXT,
+        category_id TEXT,
+        brand_name TEXT,
+        colour TEXT,
+        product_model TEXT,
+        product_type TEXT,
+        product_model_clean TEXT,
+        colour_clean TEXT,
+        size_stock_status_clean TEXT,
+        is_recliner TEXT,
+        is_sofa_bed TEXT,
+        base_sku TEXT,
+        colour_variant_number INTEGER,
+        original_price_clean DOUBLE PRECISION,
+        discounted_price_clean DOUBLE PRECISION,
+        saving DOUBLE PRECISION,
+        sales_discount TEXT,
+        raw_row JSONB NOT NULL,
+        transformed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        ${includeLoadedAt ? ', loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()' : ''}
+      )
+    `;
+  }
+
+  private async insertRawAwinRow(row: any, rowNumber: number, sourceUrl: string, jobId?: string) {
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
+       VALUES ($1, $2, $3, $4, $5::jsonb)`,
+      randomUUID(),
+      rowNumber,
+      sourceUrl,
+      jobId || null,
+      JSON.stringify(row),
+    );
+  }
+
+  private async insertRawAwinRows(
+    rows: Array<{ row: any; rowNumber: number }>,
+    sourceUrl: string,
+    jobId?: string,
+  ) {
+    if (rows.length === 0) return;
+
+    const values: any[] = [];
+    const placeholders = rows.map(({ row, rowNumber }, index) => {
+      const offset = index * 5;
+      values.push(randomUUID(), rowNumber, sourceUrl, jobId || null, JSON.stringify(row));
+      return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}::jsonb)`;
+    });
+
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
+       VALUES ${placeholders.join(', ')}`,
+      ...values,
+    );
+  }
+
+  private mapAwinRawRowToPipelineRow(row: any) {
+    const getVal = this.getAwinValueGetter(row);
+    const awProductId = getVal(['aw_product_id', 'awproductid', 'productid', 'id']);
+    const productName = getVal(['product_name', 'productname', 'name', 'title']);
+    const price = this.toNullableFloat(getVal(['search_price', 'price', 'store_price']));
+    const imageUrl = this.toHttps(
+      getVal(['aw_image_url', 'large_image', 'merchant_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']),
+    );
+    const rawProductType = getVal(['product_type']);
+    const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
+    const categoryName = this.extractLeafCategory(rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']));
+    const sofaText = this.combineAwinFields(getVal, [
+      'product_name',
+      'name',
+      'merchant_category',
+      'merchantCategory',
+      'category_name',
+      'category',
+      'product_type',
+      'productType',
+      'merchant_product_category_path',
+    ]);
+
+    if (
+      !/sofa|couch|settee/.test(sofaText) ||
+      !awProductId ||
+      !productName ||
+      !price ||
+      !imageUrl ||
+      !categoryName ||
+      categoryName === 'collection'
+    ) {
+      return null;
+    }
+
+    const productModelClean = this.inferAwinProductModel(row, getVal);
+    const colourClean = this.inferAwinColour(row, getVal);
+    const sizeStockStatusClean = this.inferAwinSizeStockStatus(row, getVal);
+    const originalPriceClean = this.parseAwinPrice(
+      this.getFirstAwinValue(row, ['rrp_price', 'rrp', 'was_price', 'wasPrice', 'base_price', 'basePrice']),
+    );
+    const discountedPriceClean = this.parseAwinPrice(
+      this.getFirstAwinValue(row, ['display_price', 'displayPrice', 'search_price', 'store_price', 'price']),
+    );
+    const saving =
+      originalPriceClean !== null && discountedPriceClean !== null && originalPriceClean - discountedPriceClean >= 5
+        ? originalPriceClean - discountedPriceClean
+        : 0;
+
+    return {
+      awProductId,
+      merchantProductId: getVal(['merchant_product_id']),
+      productName,
+      slug: this.slugify(productName, awProductId),
+      description: getVal(['description', 'product_description']),
+      price,
+      currency: getVal(['currency']),
+      imageUrl,
+      productUrl: getVal(['aw_deep_link', 'product_url', 'url']),
+      merchantName: getVal(['merchant_name', 'merchant', 'store_name']),
+      categoryName,
+      merchantCategory: rawMerchantCategory,
+      categoryId: getVal(['category_id']),
+      brandName: getVal(['brand_name', 'brand']),
+      colour: getVal(['colour', 'color']),
+      productModel: getVal(['product_model']),
+      productType: rawProductType,
+      productModelClean,
+      colourClean,
+      sizeStockStatusClean,
+      isRecliner: this.inferAwinIsRecliner(row, getVal),
+      isSofaBed: this.inferAwinIsSofaBed(row, getVal),
+      baseSku: this.extractBaseSkuFromAwinRow(row),
+      colourVariantNumber: null,
+      originalPriceClean,
+      discountedPriceClean,
+      saving,
+      salesDiscount: saving >= 5 ? 'Yes' : 'No',
+      rawRow: row,
+    };
+  }
+
+  private async upsertPipelineProductRow(tableName: string, row: any) {
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "${tableName}" (
+        aw_product_id, merchant_product_id, product_name, slug, description, search_price,
+        currency, image_url, product_url, merchant_name, category_name, merchant_category,
+        category_id, brand_name, colour, product_model, product_type, product_model_clean,
+        colour_clean, size_stock_status_clean, is_recliner, is_sofa_bed, base_sku,
+        colour_variant_number, original_price_clean, discounted_price_clean, saving,
+        sales_discount, raw_row
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29::jsonb)
+      ON CONFLICT (aw_product_id) DO UPDATE SET
+        merchant_product_id = EXCLUDED.merchant_product_id,
+        product_name = EXCLUDED.product_name,
+        slug = EXCLUDED.slug,
+        description = EXCLUDED.description,
+        search_price = EXCLUDED.search_price,
+        currency = EXCLUDED.currency,
+        image_url = EXCLUDED.image_url,
+        product_url = EXCLUDED.product_url,
+        merchant_name = EXCLUDED.merchant_name,
+        category_name = EXCLUDED.category_name,
+        merchant_category = EXCLUDED.merchant_category,
+        category_id = EXCLUDED.category_id,
+        brand_name = EXCLUDED.brand_name,
+        colour = EXCLUDED.colour,
+        product_model = EXCLUDED.product_model,
+        product_type = EXCLUDED.product_type,
+        product_model_clean = EXCLUDED.product_model_clean,
+        colour_clean = EXCLUDED.colour_clean,
+        size_stock_status_clean = EXCLUDED.size_stock_status_clean,
+        is_recliner = EXCLUDED.is_recliner,
+        is_sofa_bed = EXCLUDED.is_sofa_bed,
+        base_sku = EXCLUDED.base_sku,
+        colour_variant_number = EXCLUDED.colour_variant_number,
+        original_price_clean = EXCLUDED.original_price_clean,
+        discounted_price_clean = EXCLUDED.discounted_price_clean,
+        saving = EXCLUDED.saving,
+        sales_discount = EXCLUDED.sales_discount,
+        raw_row = EXCLUDED.raw_row,
+        transformed_at = NOW()`,
+      row.awProductId,
+      row.merchantProductId || null,
+      row.productName,
+      row.slug,
+      row.description || null,
+      row.price,
+      row.currency || null,
+      row.imageUrl,
+      row.productUrl || null,
+      row.merchantName || null,
+      row.categoryName,
+      row.merchantCategory || null,
+      row.categoryId || null,
+      row.brandName || null,
+      row.colour || null,
+      row.productModel || null,
+      row.productType || null,
+      row.productModelClean || null,
+      row.colourClean || null,
+      row.sizeStockStatusClean || null,
+      row.isRecliner || null,
+      row.isSofaBed || null,
+      row.baseSku || null,
+      row.colourVariantNumber || null,
+      row.originalPriceClean,
+      row.discountedPriceClean,
+      row.saving,
+      row.salesDiscount || null,
+      JSON.stringify(row.rawRow),
+    );
+  }
+
+  private async syncProductModelFromAwinProd(jobId?: string, progressOffset = 0, progressTotal?: number) {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "${this.awinPipelineTables.prod}" ORDER BY loaded_at DESC`,
+    );
+
+    let synced = 0;
+
+    // Load caches
+    const categories = await (this.prisma as any).category.findMany();
+    const categoryCache = new Map<string, { id: string, name: string }>();
+    categories.forEach(c => {
+      categoryCache.set(c.name.toLowerCase().trim(), { id: c.id, name: c.name });
+    });
+
+    const attributes = await (this.prisma as any).attribute.findMany();
+    const attributeCache = new Map<string, string>(); // name -> id
+    attributes.forEach(a => attributeCache.set(a.name, a.id));
+
+    const attributeValues = await (this.prisma as any).attributeValue.findMany();
+    const attributeValueCache = new Map<string, string>(); // `${attributeId}_${value}` -> id
+    attributeValues.forEach(v => attributeValueCache.set(`${v.attributeId}_${v.value}`, v.id));
+
+    const insertBatchSize = 1000;
+    const fields = [
+      'name', 'slug', 'description', 'price', 'currency', 'imageUrl', 'productUrl',
+      'merchant', 'category', 'internalCategoryId', 'merchantProductId',
+      'merchantCategory', 'categoryId', 'brandName', 'colour', 'productModel',
+      'productType', 'sizeStockStatus', 'saving', 'basePrice', 'displayPrice', 'awinId'
+    ];
+
+    for (let i = 0; i < rows.length; i += insertBatchSize) {
+      const chunk = rows.slice(i, i + insertBatchSize);
+      
+      const productsToUpsert: any[] = [];
+      for (const row of chunk) {
+        let catRec: { id: string; name: string; } | null | undefined = categoryCache.get(row.category_name.toLowerCase().trim());
+        if (!catRec && row.category_name) {
+          catRec = await this.getOrCreateCategoryRecord(row.category_name);
+          if (catRec) {
+            categoryCache.set(row.category_name.toLowerCase().trim(), catRec);
+          }
+        }
+        
+        productsToUpsert.push({
+          name: row.product_name,
+          slug: row.slug,
+          description: row.description,
+          price: row.search_price,
+          currency: row.currency,
+          imageUrl: row.image_url,
+          productUrl: row.product_url,
+          merchant: row.merchant_name,
+          category: catRec?.name || row.category_name,
+          internalCategoryId: catRec?.id || null,
+          merchantProductId: row.merchant_product_id,
+          merchantCategory: row.merchant_category,
+          categoryId: row.category_id,
+          brandName: row.brand_name,
+          colour: row.colour_clean || row.colour,
+          productModel: row.product_model_clean || row.product_model,
+          productType: row.product_type,
+          sizeStockStatus: row.size_stock_status_clean,
+          saving: row.saving,
+          basePrice: row.original_price_clean,
+          displayPrice: row.discounted_price_clean?.toString(),
+          awinId: row.aw_product_id,
+        });
+      }
+
+      // Bulk upsert products
+      const values: any[] = [];
+      const placeholders = productsToUpsert.map((row, rowIndex) => {
+        const offset = rowIndex * fields.length;
+        fields.forEach((field) => {
+          let value = row[field];
+          if (value === undefined) value = null;
+          values.push(value);
+        });
+        
+        const rowPlaceholders = fields.map((_, fieldIndex) => `$${offset + fieldIndex + 1}`);
+        return `(${rowPlaceholders.join(', ')})`;
+      });
+
+      const query = `
+        INSERT INTO "Product" (
+          name, slug, description, price, currency, "imageUrl", "productUrl",
+          merchant, category, "internalCategoryId", "merchantProductId",
+          "merchantCategory", "categoryId", "brandName", colour, "productModel",
+          "productType", "sizeStockStatus", saving, "basePrice", "displayPrice", "awinId"
+        )
+        VALUES ${placeholders.join(', ')}
+        ON CONFLICT ("awinId") DO UPDATE SET
+          name = EXCLUDED.name,
+          slug = EXCLUDED.slug,
+          description = EXCLUDED.description,
+          price = EXCLUDED.price,
+          currency = EXCLUDED.currency,
+          "imageUrl" = EXCLUDED."imageUrl",
+          "productUrl" = EXCLUDED."productUrl",
+          merchant = EXCLUDED.merchant,
+          category = EXCLUDED.category,
+          "internalCategoryId" = EXCLUDED."internalCategoryId",
+          "merchantProductId" = EXCLUDED."merchantProductId",
+          "merchantCategory" = EXCLUDED."merchantCategory",
+          "categoryId" = EXCLUDED."categoryId",
+          "brandName" = EXCLUDED."brandName",
+          colour = EXCLUDED.colour,
+          "productModel" = EXCLUDED."productModel",
+          "productType" = EXCLUDED."productType",
+          "sizeStockStatus" = EXCLUDED."sizeStockStatus",
+          saving = EXCLUDED.saving,
+          "basePrice" = EXCLUDED."basePrice",
+          "displayPrice" = EXCLUDED."displayPrice"
+        RETURNING id, "awinId"
+      `;
+
+      const result = await this.prisma.$queryRawUnsafe<Array<{id: string, awinId: string}>>(query, ...values);
+      
+      // Map attribute values
+      const linksToInsert: any[] = [];
+      const prodIdMap = new Map<string, string>(); // awinId -> id
+      result.forEach(r => prodIdMap.set(r.awinId, r.id));
+
+      for (const row of chunk) {
+        const productId = prodIdMap.get(row.aw_product_id);
+        if (!productId) continue;
+
+        const attrs = {
+          Brand: row.brand_name,
+          Colour: row.colour_clean || row.colour,
+          ProductType: row.product_type,
+          Model: row.product_model_clean || row.product_model,
+          Size: row.size_stock_status_clean,
+          Recliner: row.is_recliner,
+          SofaBed: row.is_sofa_bed,
+        };
+
+        for (const [name, value] of Object.entries(attrs)) {
+          if (value && String(value).trim() !== '') {
+            const cleanValue = String(value).trim();
+            const cleanName = name.trim();
+
+            let attrId = attributeCache.get(cleanName);
+            if (!attrId) {
+              const attr = await (this.prisma as any).attribute.upsert({
+                where: { name: cleanName },
+                update: {},
+                create: { name: cleanName },
+              });
+              attrId = attr.id;
+              attributeCache.set(cleanName, attr.id);
+            }
+
+            let valId = attributeValueCache.get(`${attrId}_${cleanValue}`);
+            if (!valId) {
+              const av = await (this.prisma as any).attributeValue.upsert({
+                where: { attributeId_value: { attributeId: attrId, value: cleanValue } },
+                update: {},
+                create: { value: cleanValue, attributeId: attrId },
+              });
+              valId = av.id;
+              attributeValueCache.set(`${attrId}_${cleanValue}`, av.id);
+            }
+
+            linksToInsert.push({ productId, attributeId: attrId, attributeValueId: valId });
+          }
+        }
+      }
+
+      // Bulk insert links
+      if (linksToInsert.length > 0) {
+        const linkValues: any[] = [];
+        const linkPlaceholders = linksToInsert.map((link, linkIndex) => {
+          const offset = linkIndex * 3;
+          linkValues.push(link.productId, link.attributeId, link.attributeValueId);
+          return `($${offset + 1}, $${offset + 2}, $${offset + 3})`;
+        });
+
+        const linkQuery = `
+          INSERT INTO "ProductAttribute" ("productId", "attributeId", "attributeValueId")
+          VALUES ${linkPlaceholders.join(', ')}
+          ON CONFLICT ("productId", "attributeId") DO UPDATE SET "attributeValueId" = EXCLUDED."attributeValueId"
+        `;
+
+        await this.prisma.$executeRawUnsafe(linkQuery, ...linkValues);
+      }
+
+      synced += chunk.length;
+
+      if (jobId) {
+        this.statusService.updateJob(
+          jobId,
+          progressOffset + synced,
+          `Synced ${synced} Plaiss products from PROD...`,
+          progressTotal || progressOffset + rows.length || 1,
+        );
+      }
+    }
+
+    return synced;
+  }
+
+  private cleanAwinText(value: any) {
+    if (value === undefined || value === null) return '';
+
+    let text = String(value).toLowerCase();
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      // Keep the original text if the retailer sends a partially encoded URL fragment.
+    }
+
+    return text
+      .replace(/[-_/>]/g, ' ')
+      .replace(/[^a-z0-9\s+]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private combineAwinFields(getVal: Function, fields: string[]) {
+    return fields
+      .map((field) => this.cleanAwinText(getVal([field])))
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  }
+
+  private inferAwinProductModel(row: any, getVal: Function) {
+    const fields = [
+      'merchant_deep_link',
+      'merchantDeepLink',
+      'merchant_product_id',
+      'product_name',
+      'name',
+      'description',
+      'product_type',
+      'productType',
+      'merchant_category',
+      'merchantCategory',
+      'merchant_product_category_path',
+      'merchant_product_second_category',
+      'merchantProductSecondCategory',
+      'merchant_product_third_category',
+      'merchantProductThirdCategory',
+      'brand_name',
+      'product_model',
+      'productModel',
+      'Fashion:material',
+    ];
+
+    for (const field of fields) {
+      const text = this.combineAwinFields(getVal, [field]);
+      if (!text) continue;
+
+      const hasFabric = /\bfabric\b|\bvelvet\b|\blinen\b|\blinen\s+fabric\b|\bplush\s+velvet\b|\bupholstered\b/.test(text);
+      const hasLeather = /\bfaux\s+leather\b|\bleather\b/.test(text);
+
+      if (hasFabric && !hasLeather) return 'Fabric';
+      if (hasLeather && !hasFabric) return 'Leather';
+      if (hasFabric && hasLeather) return 'Review';
+    }
+
+    return 'Unknown';
+  }
+
+  private inferAwinColour(row: any, getVal: Function) {
+    const fields = [
+      'merchant_deep_link',
+      'merchantDeepLink',
+      'merchant_product_id',
+      'product_name',
+      'name',
+      'description',
+      'product_type',
+      'productType',
+      'merchant_category',
+      'merchantCategory',
+      'merchant_product_category_path',
+      'merchant_product_second_category',
+      'merchantProductSecondCategory',
+      'merchant_product_third_category',
+      'merchantProductThirdCategory',
+      'colour',
+      'color',
+      'Fashion:swatch',
+      'custom_1',
+      'custom_2',
+      'custom_3',
+    ];
+
+    for (const field of fields) {
+      const detected = this.detectStandardColour(this.combineAwinFields(getVal, [field]));
+      if (detected !== 'Unknown') return detected;
+    }
+
+    return 'Unknown';
+  }
+
+  private detectStandardColour(text: string) {
+    if (!text) return 'Unknown';
+
+    const colours = Object.keys(this.standardColourMap).sort((a, b) => b.length - a.length);
+    for (const rawColour of colours) {
+      const escaped = rawColour.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`\\b${escaped}\\b`).test(text)) {
+        return this.standardColourMap[rawColour];
+      }
+    }
+
+    return 'Unknown';
+  }
+
+  private inferAwinSizeStockStatus(row: any, getVal: Function) {
+    const existing = getVal(['size_stock_status', 'sizeStockStatus']);
+    if (existing) {
+      const existingClean = String(existing)
+        .trim()
+        .replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+      if (this.validSizeLabels.has(existingClean)) return existingClean;
+    }
+
+    const text = this.combineAwinFields(getVal, [
+      'size_stock_status',
+      'sizeStockStatus',
+      'product_name',
+      'name',
+      'description',
+      'product_type',
+      'productType',
+      'merchant_category',
+      'merchantCategory',
+      'merchant_product_category_path',
+      'merchant_product_second_category',
+      'merchantProductSecondCategory',
+      'merchant_product_third_category',
+      'merchantProductThirdCategory',
+      'merchant_deep_link',
+      'merchantDeepLink',
+      'Fashion:size',
+    ]);
+
+    const rules: Array<[RegExp, string]> = [
+      [/\bsofa\s+bed\b|\bsofabed\b/, 'Sofa Bed'],
+      [/\bfootstool\b|\bfootstools\b|\botto(?:man)?\b/, 'Footstools'],
+      [/\bcorner\b|\bl\s*shape\b|\blhf\b|\brhf\b|\bleft hand\b|\bright hand\b|\bchaise\b/, 'Corner'],
+      [/\barmchair\b|\bchair\b|\bsnuggle chair\b|\bswivel chair\b|\brecliner chair\b/, 'Chair'],
+      [/\b1\s*seater\b|\bone\s+seater\b/, '1 Seater'],
+      [/\b2\s*seater\b|\btwo\s+seater\b/, '2 Seater'],
+      [/\b3\s*seater\b|\bthree\s+seater\b/, '3 Seater'],
+      [/\b4\s*seater\b|\bfour\s+seater\b/, '4 Seater'],
+    ];
+
+    for (const [pattern, label] of rules) {
+      if (pattern.test(text)) return label;
+    }
+
+    return 'Unknown';
+  }
+
+  private inferAwinIsRecliner(row: any, getVal: Function) {
+    const text = this.combineAwinFields(getVal, [
+      'product_name',
+      'name',
+      'description',
+      'product_short_description',
+      'specifications',
+      'keywords',
+      'product_type',
+      'productType',
+      'merchant_category',
+      'merchantCategory',
+      'category_name',
+      'category',
+      'merchant_product_category_path',
+      'merchant_deep_link',
+      'merchantDeepLink',
+    ]);
+
+    return /\brecliner\b|\breclining\b|\bpower\s+recliner\b|\bmanual\s+recliner\b/.test(text) ? 'Yes' : 'No';
+  }
+
+  private inferAwinIsSofaBed(row: any, getVal: Function) {
+    const text = this.combineAwinFields(getVal, [
+      'product_name',
+      'name',
+      'description',
+      'product_short_description',
+      'specifications',
+      'keywords',
+      'product_type',
+      'productType',
+      'merchant_category',
+      'merchantCategory',
+      'category_name',
+      'category',
+      'merchant_product_category_path',
+      'merchant_deep_link',
+      'merchantDeepLink',
+    ]);
+
+    return /\bsofa\s+bed\b|\bsofabed\b|\bsofa\s+with\s+bed\b/.test(text) ? 'Yes' : 'No';
+  }
+
+  private extractBaseSkuFromAwinRow(row: any) {
+    const value = this.getFirstAwinValue(row, [
+      'merchant_product_id',
+      'merchantProductId',
+      'parent_product_id',
+      'merchant_deep_link',
+      'merchantDeepLink',
+      'aw_deep_link',
+      'product_url',
+      'url',
+    ]);
+
+    if (!value) return 'Unknown';
+
+    const text = String(value);
+    const olMatch = text.match(/\b(OL\d+)/i);
+    if (olMatch) return olMatch[1].toUpperCase();
+
+    const pathProductMatch = text.match(/-p-(\d+)/i);
+    if (pathProductMatch) return pathProductMatch[1];
+
+    const hashMatch = text.match(/#(\d+)/);
+    if (hashMatch) return hashMatch[1];
+
+    const trailingNumberMatch = text.match(/(\d+)(?:\.html)?(?:\?|$)/i);
+    if (trailingNumberMatch) return trailingNumberMatch[1];
+
+    return 'Unknown';
+  }
+
+  private addVariantNumbers(rows: any[]) {
+    const variantsBySku = new Map<string, Set<string>>();
+
+    for (const row of rows) {
+      if (row.baseSku === 'Unknown' || row.colourClean === 'Unknown') continue;
+      const colours = variantsBySku.get(row.baseSku) || new Set<string>();
+      colours.add(row.colourClean);
+      variantsBySku.set(row.baseSku, colours);
+    }
+
+    const variantNumbers = new Map<string, number>();
+    for (const [baseSku, colours] of variantsBySku.entries()) {
+      Array.from(colours)
+        .sort()
+        .forEach((colour, index) => {
+          variantNumbers.set(`${baseSku}::${colour}`, index + 1);
+        });
+    }
+
+    for (const row of rows) {
+      row.colourVariantNumber = variantNumbers.get(`${row.baseSku}::${row.colourClean}`) || null;
+    }
+  }
+
+  private getFirstAwinValue(row: any, fields: string[]) {
+    const getVal = this.getAwinValueGetter(row);
+    for (const field of fields) {
+      const value = getVal([field]);
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        return value;
+      }
+    }
+
+    return undefined;
+  }
+
+  private parseAwinPrice(value: any) {
+    if (value === undefined || value === null) return null;
+    const parsed = parseFloat(String(value).replace(/,/g, '').replace(/[^\d.]/g, ''));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private getAwinValueGetter(row: any) {
+    const normalizedRow: any = {};
+    Object.keys(row || {}).forEach((key) => {
+      normalizedRow[key.toLowerCase().replace(/[\s_]/g, '')] = row[key];
+    });
+
+    return (keys: string[]) => {
+      for (const key of keys) {
+        const normalized = key.toLowerCase().replace(/[\s_]/g, '');
+        if (normalizedRow[normalized] !== undefined && normalizedRow[normalized] !== '') {
+          return normalizedRow[normalized];
+        }
+      }
+      return undefined;
+    };
+  }
+
+  private toNullableFloat(value: any) {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private toHttps(value: any) {
+    return value ? String(value).replace('http://', 'https://') : '';
   }
 
   private async upsertProduct(row: any) {
@@ -751,4 +2067,3 @@ export class AwinService {
     return { mergedCount, variantCount };
   }
 }
-

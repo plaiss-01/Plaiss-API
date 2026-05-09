@@ -2,7 +2,17 @@ import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class ImportStatusService {
-  private jobs = new Map<string, { current: number; total: number; status: string; message: string; timestamp: number }>();
+  private jobs = new Map<
+    string,
+    {
+      current: number;
+      total: number;
+      status: string;
+      message: string;
+      timestamp: number;
+      result?: Record<string, unknown>;
+    }
+  >();
   private readonly MAX_JOB_AGE = 3600000; // 1 hour
   private readonly MAX_JOBS = 100; // Hard limit on number of tracked jobs
 
@@ -22,20 +32,22 @@ export class ImportStatusService {
     return this.jobs.get(id);
   }
 
-  updateJob(id: string, current: number, message?: string) {
+  updateJob(id: string, current: number, message?: string, total?: number) {
     const job = this.jobs.get(id);
     if (job) {
       job.current = current;
+      if (total !== undefined) job.total = total;
       job.timestamp = Date.now(); // Update timestamp to keep it longer if it's active
       if (message !== undefined) job.message = message;
     }
   }
 
-  completeJob(id: string, message: string) {
+  completeJob(id: string, message: string, result?: Record<string, unknown>) {
     const job = this.jobs.get(id);
     if (job) {
       job.status = 'completed';
       job.message = message;
+      if (result) job.result = result;
       job.timestamp = Date.now();
     }
   }

@@ -21,6 +21,134 @@ export class AwinController {
   private productsCache = new Map<string, { data: any, timestamp: number }>();
   private readonly CACHE_TTL = 30000; // 30 seconds for category structure
   private readonly MAX_CACHE_SIZE = 20; // Maximum number of cached queries
+  private readonly productListSelect = {
+    id: true,
+    name: true,
+    price: true,
+    currency: true,
+    imageUrl: true,
+    awThumbUrl: true,
+    largeImage: true,
+    category: true,
+    slug: true,
+    merchant: true,
+    productUrl: true,
+    description: true,
+    createdAt: true,
+    colour: true,
+    brandName: true,
+    merchantCategory: true,
+    merchantProductCategoryPath: true,
+    productType: true,
+    productModel: true,
+    sizeStockStatus: true,
+    basePrice: true,
+    displayPrice: true,
+    rrpPrice: true,
+    saving: true,
+    savingsPercent: true,
+    deliveryCost: true,
+    deliveryTime: true,
+    inStock: true,
+    stockStatus: true,
+    stockQuantity: true,
+    isForSale: true,
+    colorVariants: true,
+    attributes: {
+      select: {
+        attribute: { select: { name: true } },
+        attributeValue: { select: { value: true } },
+      },
+    },
+  };
+
+  @Get('pipeline/tables')
+  @ApiOperation({ summary: 'Get AWIN raw/dev/prod pipeline table names' })
+  async getPipelineTables() {
+    return this.awinService.getAwinPipelineTableSummary();
+  }
+
+  @Post('pipeline/extract-raw')
+  @ApiOperation({ summary: 'Step 1: Extract AWIN data into AWIN_AFFILIAT_PRODUCTS_DATA_RAW' })
+  async extractRaw(@Body() body: { url: string; replace?: boolean }) {
+    const jobId = `awin-raw-${Date.now()}`;
+    this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN RAW extraction...');
+
+    this.awinService.extractAwinFeedToRaw(body.url, jobId, body.replace !== false).catch((e) => {
+      this.statusService.failJob(jobId, e.message);
+    });
+
+    return {
+      jobId,
+      message: 'AWIN RAW extraction started',
+      table: this.awinService.getAwinPipelineTableNames().raw,
+    };
+  }
+
+  @Post('pipeline/upload-raw-csv')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Step 1 alternative: Upload AWIN CSV into AWIN_AFFILIAT_PRODUCTS_DATA_RAW' })
+  async uploadRawCsv(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { replace?: string },
+  ) {
+    const jobId = `awin-raw-csv-${Date.now()}`;
+    this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN CSV RAW extraction...');
+
+    this.awinService.extractCsvFileToRaw(file.buffer, jobId, body.replace !== 'false').catch((e) => {
+      this.statusService.failJob(jobId, e.message);
+    });
+
+    return {
+      jobId,
+      message: 'AWIN CSV RAW extraction started',
+      table: this.awinService.getAwinPipelineTableNames().raw,
+    };
+  }
+
+  @Post('pipeline/transform-dev')
+  @ApiOperation({ summary: 'Step 2: Transform AWIN RAW data into AWIN_AFFILIAT_PRODUCTS_DATA_DEV' })
+  async transformDev(@Body() body: { replace?: boolean }) {
+    const jobId = `awin-transform-dev-${Date.now()}`;
+    this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN DEV transform...');
+
+    this.awinService.transformRawToDev(body?.replace !== false, jobId).catch((e) => {
+      this.statusService.failJob(jobId, e.message);
+    });
+
+    return {
+      jobId,
+      message: 'AWIN DEV transform started',
+      sourceTable: this.awinService.getAwinPipelineTableNames().raw,
+      targetTable: this.awinService.getAwinPipelineTableNames().dev,
+    };
+  }
+
+  @Post('pipeline/promote-prod')
+  @ApiOperation({ summary: 'Step 3: Promote reviewed AWIN DEV data into AWIN_AFFILIAT_PRODUCTS_DATA_PROD' })
+  async promoteProd(@Body() body: { replace?: boolean; syncProductTable?: boolean }) {
+    const jobId = `awin-promote-prod-${Date.now()}`;
+    this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN PROD promotion...');
+
+    this.awinService
+      .loadDevToProd(
+        body?.replace !== false,
+        body?.syncProductTable !== false,
+        jobId,
+      )
+      .then(() => this.productsCache.clear())
+      .catch((e) => {
+        this.statusService.failJob(jobId, e.message);
+      });
+
+    this.productsCache.clear();
+    return {
+      jobId,
+      message: 'AWIN PROD promotion started',
+      sourceTable: this.awinService.getAwinPipelineTableNames().dev,
+      targetTable: this.awinService.getAwinPipelineTableNames().prod,
+    };
+  }
 
   @Post('add-product')
   @ApiOperation({ summary: 'Add a new product using an Awin URL' })
@@ -100,7 +228,7 @@ export class AwinController {
     if (l > 1000) l = 1000; // Cap limit to prevent memory issues
     const skip = (p - 1) * l;
 
-    const cacheKey = `products-${p}-${l}-${category || 'all'}`;
+    const cacheKey = `products-${p}-${l}-${category || 'all'}-${subs || 'none'}-${search || 'none'}`;
     const now = Date.now();
     if (this.productsCache.has(cacheKey)) {
       const cached = this.productsCache.get(cacheKey)!;
@@ -191,10 +319,24 @@ export class AwinController {
       
       console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
 
+      // Build keyword contains conditions for each unique name (e.g. "Sofas" also matches "Fabric Sofas")
+      // We also add the singular version if it ends with 's' to match "Sofa" in "Sofa Beds"
+      const keywordConditions: any[] = [];
+      uniqueNames.forEach(name => {
+        keywordConditions.push({ category: { contains: name, mode: 'insensitive' as const } });
+        if (name.toLowerCase().endsWith('s')) {
+          const singular = name.slice(0, -1);
+          if (singular.length > 2) {
+            keywordConditions.push({ category: { contains: singular, mode: 'insensitive' as const } });
+          }
+        }
+      });
+
       where.OR = [
         { internalCategoryId: { in: uniqueIds } },
         { category: { in: uniqueNames, mode: 'insensitive' } },
         { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
+        ...keywordConditions,
       ];
     }
 
@@ -233,30 +375,7 @@ export class AwinController {
 
       const fetchedProducts = await (this.prisma.product as any).findMany({
         where: { id: { in: pageIds } },
-        select: {
-          id: true,
-          name: true,
-          price: true,
-          imageUrl: true,
-          awThumbUrl: true,
-          largeImage: true,
-          category: true,
-          slug: true,
-          merchant: true,
-          productUrl: true,
-          description: true,
-          createdAt: true,
-          colour: true,
-          merchantCategory: true,
-          productType: true,
-          colorVariants: true,
-          attributes: {
-            select: {
-              attribute: { select: { name: true } },
-              attributeValue: { select: { value: true } }
-            }
-          }
-        },
+        select: this.productListSelect,
       });
 
       // Sort back to match interleaved order
@@ -287,30 +406,7 @@ export class AwinController {
                  skip,
                  take: l,
                  orderBy: { createdAt: 'desc' },
-                 select: {
-                   id: true,
-                   name: true,
-                   price: true,
-                   imageUrl: true,
-                   awThumbUrl: true,
-                   largeImage: true,
-                   category: true,
-                   slug: true,
-                   merchant: true,
-                   productUrl: true,
-                   description: true,
-                   createdAt: true,
-                   colour: true,
-                   merchantCategory: true,
-                   productType: true,
-                   colorVariants: true,
-                   attributes: {
-                     select: {
-                       attribute: { select: { name: true } },
-                       attributeValue: { select: { value: true } }
-                     }
-                   }
-                 },
+                 select: this.productListSelect,
                }),
                (this.prisma.product as any).count({
                  where: {
@@ -343,30 +439,7 @@ export class AwinController {
             skip,
             take: l,
             orderBy: { createdAt: 'desc' },
-            select: {
-              id: true,
-              name: true,
-              price: true,
-              imageUrl: true,
-              awThumbUrl: true,
-              largeImage: true,
-              category: true,
-              slug: true,
-              merchant: true,
-              productUrl: true,
-              description: true,
-              createdAt: true,
-              colour: true,
-              merchantCategory: true,
-              productType: true,
-              colorVariants: true,
-              attributes: {
-                select: {
-                  attribute: { select: { name: true } },
-                  attributeValue: { select: { value: true } }
-                }
-              }
-            },
+            select: this.productListSelect,
           }),
           (this.prisma.product as any).count({ where: fallbackWhere }),
         ]);

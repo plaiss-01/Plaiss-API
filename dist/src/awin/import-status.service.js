@@ -24,20 +24,24 @@ let ImportStatusService = class ImportStatusService {
     getJob(id) {
         return this.jobs.get(id);
     }
-    updateJob(id, current, message) {
+    updateJob(id, current, message, total) {
         const job = this.jobs.get(id);
         if (job) {
             job.current = current;
+            if (total !== undefined)
+                job.total = total;
             job.timestamp = Date.now();
             if (message !== undefined)
                 job.message = message;
         }
     }
-    completeJob(id, message) {
+    completeJob(id, message, result) {
         const job = this.jobs.get(id);
         if (job) {
             job.status = 'completed';
             job.message = message;
+            if (result)
+                job.result = result;
             job.timestamp = Date.now();
         }
     }
