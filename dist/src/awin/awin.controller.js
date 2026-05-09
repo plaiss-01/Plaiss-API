@@ -282,7 +282,7 @@ let AwinController = class AwinController {
         });
         return products.map((product) => this.enhanceProductImages(product));
     }
-    async getAllProducts(page = '1', limit = '50', category, subs, search) {
+    async getAllProducts(page = '1', limit = '50', category, subs, search, colors, sizes, materials, minPrice, maxPrice) {
         const p = parseInt(page, 10) || 1;
         let l = parseInt(limit, 10) || 50;
         if (l > 1000)
@@ -370,6 +370,33 @@ let AwinController = class AwinController {
                 ...keywordConditions,
             ];
         }
+        const hasFilters = colors || sizes || materials || minPrice || maxPrice;
+        if (hasFilters) {
+            const andConditions = [];
+            if (colors) {
+                const array = colors.split(',').map(s => s.trim());
+                andConditions.push({ OR: array.map(val => ({ colour: { equals: val, mode: 'insensitive' } })) });
+            }
+            if (sizes) {
+                const array = sizes.split(',').map(s => s.trim());
+                andConditions.push({ OR: array.map(val => ({ sizeStockStatus: { equals: val, mode: 'insensitive' } })) });
+            }
+            if (materials) {
+                const array = materials.split(',').map(s => s.trim());
+                andConditions.push({ OR: array.map(val => ({ productModel: { equals: val, mode: 'insensitive' } })) });
+            }
+            if (minPrice || maxPrice) {
+                const priceCond = {};
+                if (minPrice)
+                    priceCond.gte = parseFloat(minPrice);
+                if (maxPrice)
+                    priceCond.lte = parseFloat(maxPrice);
+                andConditions.push({ price: priceCond });
+            }
+            if (andConditions.length > 0) {
+                where.AND = andConditions;
+            }
+        }
         let [idResults, total] = await Promise.all([
             this.prisma.product.findMany({
                 where,
@@ -405,7 +432,7 @@ let AwinController = class AwinController {
             });
             data = pageIds.map(id => fetchedProducts.find((prod) => prod.id === id)).filter(Boolean);
         }
-        if (total === 0 && category && category !== 'all-products') {
+        if (total === 0 && category && category !== 'all-products' && !hasFilters) {
             console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
             const { data: allCats, categoryMap } = await this.categoryService.getCategoryStructure();
             if (allCats && categoryMap) {
@@ -743,8 +770,13 @@ __decorate([
     __param(2, (0, common_1.Query)('category')),
     __param(3, (0, common_1.Query)('subs')),
     __param(4, (0, common_1.Query)('search')),
+    __param(5, (0, common_1.Query)('colors')),
+    __param(6, (0, common_1.Query)('sizes')),
+    __param(7, (0, common_1.Query)('materials')),
+    __param(8, (0, common_1.Query)('minPrice')),
+    __param(9, (0, common_1.Query)('maxPrice')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
 __decorate([

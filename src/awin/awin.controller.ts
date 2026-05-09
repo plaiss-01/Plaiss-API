@@ -334,6 +334,11 @@ export class AwinController {
     @Query('category') category?: string,
     @Query('subs') subs?: string,
     @Query('search') search?: string,
+    @Query('colors') colors?: string,
+    @Query('sizes') sizes?: string,
+    @Query('materials') materials?: string,
+    @Query('minPrice') minPrice?: string,
+    @Query('maxPrice') maxPrice?: string,
   ) {
     const p = parseInt(page, 10) || 1;
     let l = parseInt(limit, 10) || 50;
@@ -452,6 +457,36 @@ export class AwinController {
       ];
     }
 
+    // Server-side filtering
+    const hasFilters = colors || sizes || materials || minPrice || maxPrice;
+    
+    if (hasFilters) {
+      const andConditions: any[] = [];
+      
+      if (colors) {
+        const array = colors.split(',').map(s => s.trim());
+        andConditions.push({ OR: array.map(val => ({ colour: { equals: val, mode: 'insensitive' as const } })) });
+      }
+      if (sizes) {
+        const array = sizes.split(',').map(s => s.trim());
+        andConditions.push({ OR: array.map(val => ({ sizeStockStatus: { equals: val, mode: 'insensitive' as const } })) });
+      }
+      if (materials) {
+        const array = materials.split(',').map(s => s.trim());
+        andConditions.push({ OR: array.map(val => ({ productModel: { equals: val, mode: 'insensitive' as const } })) });
+      }
+      if (minPrice || maxPrice) {
+        const priceCond: any = {};
+        if (minPrice) priceCond.gte = parseFloat(minPrice);
+        if (maxPrice) priceCond.lte = parseFloat(maxPrice);
+        andConditions.push({ price: priceCond });
+      }
+      
+      if (andConditions.length > 0) {
+        where.AND = andConditions;
+      }
+    }
+
     let [idResults, total] = await Promise.all([
       (this.prisma.product as any).findMany({
         where,
@@ -496,7 +531,8 @@ export class AwinController {
 
     // FALLBACK: If 0 products found for the specific category/hierarchy,
     // try a broader search using individual words from the category name.
-    if (total === 0 && category && category !== 'all-products') {
+    // Skip fallback if filters are present so we don't return unrelated products!
+    if (total === 0 && category && category !== 'all-products' && !hasFilters) {
       console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
       
       const { data: allCats, categoryMap } = await this.categoryService.getCategoryStructure();

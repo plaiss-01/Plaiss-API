@@ -77,7 +77,7 @@ export declare class AwinController {
         result?: Record<string, unknown>;
     } | undefined>;
     getMixBrandsProducts(categories: string, limit?: string): Promise<any[]>;
-    getAllProducts(page?: string, limit?: string, category?: string, subs?: string, search?: string): Promise<any>;
+    getAllProducts(page?: string, limit?: string, category?: string, subs?: string, search?: string, colors?: string, sizes?: string, materials?: string, minPrice?: string, maxPrice?: string): Promise<any>;
     getMerchants(): Promise<(string | null)[]>;
     getBrands(category?: string): Promise<(string | null)[]>;
     getCategories(): Promise<any[]>;
