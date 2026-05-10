@@ -635,6 +635,10 @@ export class AwinService {
       }
     }
 
+    // Clear RAW table after successful transformation
+    this.logger.log('Clearing RAW table after transformation...');
+    await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
+
     const result = {
       message: 'RAW transformed to DEV',
       sourceTable: this.getAwinPipelineTableNames().raw,
@@ -747,6 +751,10 @@ export class AwinService {
     const syncedProducts = syncProductTable
       ? await this.syncProductModelFromAwinProd(jobId, devRows, (devRows || 1) * 2)
       : 0;
+
+    // Clear DEV table after successful promotion
+    this.logger.log('Clearing DEV table after promotion...');
+    await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.dev}"`);
 
     const result = {
       message: 'DEV loaded to PROD',

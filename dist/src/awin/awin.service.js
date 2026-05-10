@@ -580,6 +580,8 @@ let AwinService = AwinService_1 = class AwinService {
                 this.statusService.updateJob(jobId, processed, `Saved ${transformed} products to DEV...`, totalWork || 1);
             }
         }
+        this.logger.log('Clearing RAW table after transformation...');
+        await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
         const result = {
             message: 'RAW transformed to DEV',
             sourceTable: this.getAwinPipelineTableNames().raw,
@@ -666,6 +668,8 @@ let AwinService = AwinService_1 = class AwinService {
         const syncedProducts = syncProductTable
             ? await this.syncProductModelFromAwinProd(jobId, devRows, (devRows || 1) * 2)
             : 0;
+        this.logger.log('Clearing DEV table after promotion...');
+        await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.dev}"`);
         const result = {
             message: 'DEV loaded to PROD',
             sourceTable: this.getAwinPipelineTableNames().dev,

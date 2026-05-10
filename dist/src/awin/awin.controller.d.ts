@@ -92,8 +92,8 @@ export declare class AwinController {
     getProductById(id: string): Promise<any>;
     updateProduct(id: string, updateProductDto: UpdateProductDto): Promise<{
         id: string;
-        name: string;
         slug: string | null;
+        name: string;
         description: string | null;
         price: number | null;
         currency: string | null;
@@ -125,8 +125,8 @@ export declare class AwinController {
     }>;
     deleteProduct(id: string): Promise<{
         id: string;
-        name: string;
         slug: string | null;
+        name: string;
         description: string | null;
         price: number | null;
         currency: string | null;
