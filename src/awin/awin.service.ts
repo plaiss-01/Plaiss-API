@@ -168,7 +168,7 @@ export class AwinService {
 
           let exists = false;
           if (potentialAwinId) {
-             const existing = await this.prisma.product.findUnique({ where: { awinId: potentialAwinId } });
+             const existing = await this.prisma.product.findUnique({ where: { id: potentialAwinId } });
              if (existing) exists = true;
           }
           if (!exists) {
@@ -504,6 +504,12 @@ export class AwinService {
         const mapped = this.mapAwinRawRowToPipelineRow(item.raw_row || {});
         if (!mapped) {
           skipped++;
+        } else if (
+          mapped.productModelClean === 'Unknown' ||
+          mapped.colourClean === 'Unknown' ||
+          mapped.sizeStockStatusClean === 'Unknown'
+        ) {
+          skipped++;
         } else {
           mappedRows.push(mapped);
         }
@@ -652,10 +658,6 @@ export class AwinService {
   async loadDevToProd(replace = true, syncProductTable = true, jobId?: string) {
     await this.ensureAwinPipelineTables();
 
-    if (replace) {
-      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.prod}"`);
-    }
-
     const [{ count: devRows }] = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.dev}"`,
     );
@@ -731,6 +733,15 @@ export class AwinService {
           ? `PROD has ${count} rows. Syncing Plaiss products...`
           : `PROD has ${count} rows.`,
       );
+    }
+
+    if (syncProductTable) {
+      this.logger.log('Running deduplication on PROD data...');
+      try {
+        await this.deduplicateProducts();
+      } catch (err) {
+        this.logger.error(`Deduplication failed during promotion: ${err.message}`);
+      }
     }
 
     const syncedProducts = syncProductTable
@@ -909,7 +920,7 @@ export class AwinService {
     const productName = getVal(['product_name', 'productname', 'name', 'title']);
     const price = this.toNullableFloat(getVal(['search_price', 'price', 'store_price']));
     const imageUrl = this.toHttps(
-      getVal(['aw_image_url', 'large_image', 'merchant_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']),
+      getVal(['merchant_image_url', 'aw_image_url', 'large_image', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']),
     );
     const rawProductType = getVal(['product_type']);
     const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
@@ -1082,7 +1093,7 @@ export class AwinService {
 
     const insertBatchSize = 1000;
     const fields = [
-      'name', 'slug', 'description', 'price', 'currency', 'imageUrl', 'productUrl',
+      'id', 'name', 'slug', 'description', 'price', 'currency', 'imageUrl', 'productUrl',
       'merchant', 'category', 'internalCategoryId', 'merchantProductId',
       'merchantCategory', 'categoryId', 'brandName', 'colour', 'productModel',
       'productType', 'sizeStockStatus', 'saving', 'basePrice', 'displayPrice', 'awinId'
@@ -1102,6 +1113,7 @@ export class AwinService {
         }
         
         productsToUpsert.push({
+          id: randomUUID(),
           name: row.product_name,
           slug: row.slug,
           description: row.description,
@@ -1138,15 +1150,15 @@ export class AwinService {
         });
         
         const rowPlaceholders = fields.map((_, fieldIndex) => `$${offset + fieldIndex + 1}`);
-        return `(${rowPlaceholders.join(', ')})`;
+        return `(${rowPlaceholders.join(', ')}, NOW())`;
       });
 
       const query = `
         INSERT INTO "Product" (
-          name, slug, description, price, currency, "imageUrl", "productUrl",
+          id, name, slug, description, price, currency, "imageUrl", "productUrl",
           merchant, category, "internalCategoryId", "merchantProductId",
           "merchantCategory", "categoryId", "brandName", colour, "productModel",
-          "productType", "sizeStockStatus", saving, "basePrice", "displayPrice", "awinId"
+          "productType", "sizeStockStatus", saving, "basePrice", "displayPrice", "awinId", "updatedAt"
         )
         VALUES ${placeholders.join(', ')}
         ON CONFLICT ("awinId") DO UPDATE SET
@@ -1170,7 +1182,8 @@ export class AwinService {
           "sizeStockStatus" = EXCLUDED."sizeStockStatus",
           saving = EXCLUDED.saving,
           "basePrice" = EXCLUDED."basePrice",
-          "displayPrice" = EXCLUDED."displayPrice"
+          "displayPrice" = EXCLUDED."displayPrice",
+          "updatedAt" = NOW()
         RETURNING id, "awinId"
       `;
 
@@ -1594,7 +1607,23 @@ export class AwinService {
     
     // Ensure product has basic complete attributes
     const finalPrice = parseFloat(getVal(['search_price', 'price'])) || 0;
-    const finalImageUrl = (getVal(['aw_image_url', 'large_image', 'merchant_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']) || '').replace('http://', 'https://');
+    
+    // Find first image that isn't a broken placeholder
+    const imageKeys = ['merchant_image_url', 'large_image', 'aw_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url'];
+    let finalImageUrl = '';
+    
+    for (const key of imageKeys) {
+      const val = getVal([key]);
+      if (val && !val.includes('noimage.gif') && !val.includes('no_image')) {
+        finalImageUrl = val.replace('http://', 'https://');
+        break;
+      }
+    }
+    
+    // Fallback if all have noimage or are empty
+    if (!finalImageUrl) {
+      finalImageUrl = (getVal(imageKeys) || '').replace('http://', 'https://');
+    }
     
     if (!productName || productName === 'Unknown Product' || finalPrice === 0 || !finalImageUrl || !finalCategory || finalCategory === 'collection') {
        throw new Error(`Product has incomplete attributes. Name: ${productName}, Price: ${finalPrice}, Category: ${finalCategory}. Must not import.`);
@@ -1607,15 +1636,7 @@ export class AwinService {
       description: getVal(['description', 'product_description']),
       price: parseFloat(getVal(['search_price', 'price'])) || 0,
       currency: getVal(['currency']),
-      imageUrl: (getVal([
-        'aw_image_url',
-        'large_image',
-        'merchant_image_url', 
-        'image_url', 
-        'alternate_image', 
-        'image',
-        'aw_thumb_url'
-      ]) || '').replace('http://', 'https://'),
+      imageUrl: finalImageUrl,
       productUrl: getVal(['aw_deep_link', 'product_url', 'url']),
       merchant: getVal(['merchant_name', 'merchant', 'store_name']),
       category: finalCategory,
@@ -1761,7 +1782,7 @@ export class AwinService {
 
     // Mapping Awin CSV columns to our schema
     const product = await (this.prisma as any).product.upsert({
-      where: { awinId: awProductId },
+      where: { id: awProductId },
       update: productData,
       create: {
         ...productData,
@@ -1856,7 +1877,7 @@ export class AwinService {
       }
 
       const product = await (this.prisma as any).product.upsert({
-        where: { awinId: awinId },
+        where: { id: awinId },
         update: {
           name,
           slug: this.slugify(name, awinId),
@@ -1986,7 +2007,15 @@ export class AwinService {
   async deduplicateProducts() {
     this.logger.log('Starting global product deduplication...');
     const allProducts = await (this.prisma as any).product.findMany({
-      include: { colorVariants: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        colour: true,
+        imageUrl: true,
+        productUrl: true,
+        colorVariants: true,
+      }
     });
 
     const groups = new Map<string, any[]>();
@@ -2029,7 +2058,7 @@ export class AwinService {
 
           // Create variant
           await (this.prisma as any).productColorVariant.upsert({
-            where: { awinId: v.awinId },
+            where: { awinId: v.id },
             update: {
               colorName,
               imageUrl: v.imageUrl,
@@ -2053,8 +2082,11 @@ export class AwinService {
              });
           }
 
-          // Delete the duplicate product
-          await (this.prisma as any).product.delete({ where: { id: v.id } });
+          // Delete the duplicate product using raw SQL to avoid Prisma validation errors on bad data
+          await this.prisma.$executeRawUnsafe(
+            `DELETE FROM "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" WHERE "aw_product_id" = $1`,
+            v.id
+          );
           mergedCount++;
           variantCount++;
         } catch (err) {

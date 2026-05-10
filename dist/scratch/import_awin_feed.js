@@ -115,7 +115,7 @@ async function getOrCreateCategory(pathString, categoryCache, prisma) {
     return parentId;
 }
 async function main() {
-    const url = 'https://productdata.awin.com/datafeed/download/apikey/c2c3e805ebd99d73d9a8eb334715631e/language/en/cid/422,433,530,434,436,532,424,451,448,453,449,452,450,425,455,457,459,460,456,458,426,616,463,464,465,466,427,625,597,473,469,617,470,430,481,615,483,484,485,488,529,596/fid/17007/rid/0/hasEnhancedFeeds/0/columns/aw_deep_link,product_name,aw_product_id,merchant_product_id,merchant_image_url,description,merchant_category,search_price,merchant_name,merchant_id,category_name,category_id,aw_image_url,currency,store_price,delivery_cost,merchant_deep_link,language,last_updated,display_price,data_feed_id,brand_name,brand_id,colour,product_short_description,specifications,condition,product_model,model_number,dimensions,keywords,promotional_text,product_type,commission_group,merchant_product_category_path,merchant_product_second_category,merchant_product_third_category,rrp_price,saving,savings_percent,base_price,base_price_amount,base_price_text,product_price_old,delivery_restrictions,delivery_weight,warranty,terms_of_contract,delivery_time,in_stock,stock_quantity,valid_from,valid_to,is_for_sale,web_offer,pre_order,stock_status,size_stock_status,size_stock_amount,merchant_thumb_url,large_image,alternate_image,aw_thumb_url,alternate_image_two,alternate_image_three,alternate_image_four,reviews,average_rating,rating,number_available,custom_1,custom_2,custom_3,custom_4,custom_5,custom_6,custom_7,custom_8,custom_9,ean,isbn,upc,mpn,parent_product_id,product_GTIN,basket_link/format/csv/delimiter/%2C/compression/gzip/';
+    const url = 'https://productdata.awin.com/datafeed/download/apikey/c2c3e805ebd99d73d9a8eb334715631e/language/en/cid/449/hasEnhancedFeeds/0/columns/aw_deep_link,product_name,aw_product_id,merchant_product_id,merchant_image_url,description,merchant_category,search_price,merchant_name,merchant_id,category_name,category_id,aw_image_url,currency,store_price,delivery_cost,merchant_deep_link,language,last_updated,display_price,data_feed_id,brand_name,brand_id,colour,product_short_description,specifications,condition,product_model,model_number,dimensions,keywords,promotional_text,product_type,commission_group,merchant_product_category_path,merchant_product_second_category,merchant_product_third_category,rrp_price,saving,savings_percent,base_price,base_price_amount,base_price_text,product_price_old,delivery_restrictions,delivery_weight,warranty,terms_of_contract,delivery_time,in_stock,stock_quantity,valid_from,valid_to,is_for_sale,web_offer,pre_order,stock_status,size_stock_status,size_stock_amount,merchant_thumb_url,large_image,alternate_image,aw_thumb_url,alternate_image_two,alternate_image_three,alternate_image_four,reviews,average_rating,rating,number_available,custom_1,custom_2,custom_3,custom_4,custom_5,custom_6,custom_7,custom_8,custom_9,ean,isbn,upc,mpn,parent_product_id,product_GTIN,basket_link,Fashion%3Asuitable_for,Fashion%3Acategory,Fashion%3Asize,Fashion%3Amaterial,Fashion%3Apattern,Fashion%3Aswatch,GroupBuying%3Aevent_date,GroupBuying%3Aexpiry_date,GroupBuying%3Aexpiry_time,GroupBuying%3Aevent_city,GroupBuying%3Aevent_address,GroupBuying%3Anumber_sessions,GroupBuying%3Aterms,GroupBuying%3Anumber_sold,GroupBuying%3Amin_required,GroupBuying%3Asupplier,GroupBuying%3Agroup_latitude,GroupBuying%3Agroup_longitude,GroupBuying%3Adeal_start,GroupBuying%3Adeal_end,ShoppingNL%3Aenergy_label,ShoppingNL%3Aenergy_label_link,ShoppingNL%3Aenergy_label_logo,ShoppingNL%3Agoogle_taxonomy/format/csv/delimiter/%2C/compression/gzip/adultcontent/1/';
     console.log('Updating products (creating new ones and updating categories for existing)...');
     console.log('Pre-loading categories...');
     const existingCategories = await prisma.category.findMany();
@@ -142,6 +142,16 @@ async function main() {
             categoryString = row.merchant_category;
         }
         const mappedCategoryId = await getOrCreateCategory(categoryString, categoryCache, prisma);
+        let imageUrl = '';
+        const imageCandidates = [row.merchant_image_url, row.large_image, row.aw_image_url, row.image_url];
+        for (const img of imageCandidates) {
+            if (img && !img.includes('noimage.gif') && !img.includes('no_image')) {
+                imageUrl = img;
+                break;
+            }
+        }
+        if (!imageUrl)
+            imageUrl = row.merchant_image_url || row.large_image || row.aw_image_url || '';
         batch.push({
             awinId: row.aw_product_id,
             name: name,
@@ -149,7 +159,7 @@ async function main() {
             description: row.description,
             price: price,
             currency: row.currency,
-            imageUrl: row.merchant_image_url || row.aw_image_url,
+            imageUrl: imageUrl.replace('http://', 'https://'),
             productUrl: row.aw_deep_link,
             merchant: row.merchant_name,
             category: row.category_name,
@@ -232,41 +242,105 @@ async function main() {
         });
         if (batch.length >= 200) {
             try {
-                const operations = batch.map(item => prisma.product.upsert({
-                    where: { awinId: item.awinId },
-                    update: {
-                        categoryId: item.categoryId,
-                        category: item.category,
-                        productType: item.productType,
-                        colour: item.colour,
-                        merchantCategory: item.merchantCategory,
-                    },
-                    create: item
-                }));
+                const operations = batch.map(async (item) => {
+                    if (item.parentProductId && item.parentProductId !== item.awinId) {
+                        const parent = await prisma.product.findUnique({ where: { id: item.parentProductId } });
+                        if (parent) {
+                            return prisma.productColorVariant.upsert({
+                                where: { awinId: item.awinId },
+                                update: {
+                                    colorName: item.colour || 'Original',
+                                    imageUrl: item.imageUrl,
+                                    productUrl: item.productUrl,
+                                    productId: parent.id
+                                },
+                                create: {
+                                    awinId: item.awinId,
+                                    colorName: item.colour || 'Original',
+                                    imageUrl: item.imageUrl,
+                                    productUrl: item.productUrl,
+                                    productId: parent.id
+                                }
+                            });
+                        }
+                    }
+                    return prisma.product.upsert({
+                        where: { id: item.awinId },
+                        update: {
+                            categoryId: item.categoryId,
+                            category: item.category,
+                            productType: item.productType,
+                            colour: item.colour,
+                            merchantCategory: item.merchantCategory,
+                        },
+                        create: item
+                    });
+                });
                 await Promise.all(operations);
                 totalImported += batch.length;
-                console.log(`Upserted batch of ${batch.length} (Total: ${totalImported})...`);
+                console.log(`Fast-processed batch of ${batch.length} (Total: ${totalImported})...`);
                 batch = [];
             }
             catch (err) {
-                console.error(`Error saving batch: ${err.message}`);
+                console.log(`Parallel batch failed (${err.message}). Falling back to safe sequential mode for this batch...`);
+                for (const item of batch) {
+                    if (item.parentProductId && item.parentProductId !== item.awinId) {
+                        const parent = await prisma.product.findUnique({ where: { id: item.parentProductId } });
+                        if (parent) {
+                            await prisma.productColorVariant.upsert({
+                                where: { awinId: item.awinId },
+                                update: { colorName: item.colour || 'Original', imageUrl: item.imageUrl, productUrl: item.productUrl, productId: parent.id },
+                                create: { awinId: item.awinId, colorName: item.colour || 'Original', imageUrl: item.imageUrl, productUrl: item.productUrl, productId: parent.id }
+                            });
+                            continue;
+                        }
+                    }
+                    try {
+                        await prisma.product.upsert({
+                            where: { id: item.awinId },
+                            update: { categoryId: item.categoryId, category: item.category, productType: item.productType, colour: item.colour },
+                            create: item
+                        });
+                    }
+                    catch (upsertErr) {
+                        if (upsertErr.message.includes('slug')) {
+                            item.slug = `${item.slug}-${Math.random().toString(36).substr(2, 5)}`;
+                            await prisma.product.upsert({
+                                where: { id: item.awinId },
+                                update: { categoryId: item.categoryId, category: item.category, productType: item.productType, colour: item.colour },
+                                create: item
+                            });
+                        }
+                        else {
+                            throw upsertErr;
+                        }
+                    }
+                }
+                totalImported += batch.length;
+                console.log(`Seq-processed batch of ${batch.length} (Total: ${totalImported})...`);
                 batch = [];
             }
         }
     }
     if (batch.length > 0) {
         try {
-            const operations = batch.map(item => prisma.product.upsert({
-                where: { awinId: item.awinId },
-                update: {
-                    categoryId: item.categoryId,
-                    category: item.category,
-                    productType: item.productType,
-                    colour: item.colour,
-                    merchantCategory: item.merchantCategory,
-                },
-                create: item
-            }));
+            const operations = batch.map(async (item) => {
+                if (item.parentProductId && item.parentProductId !== item.awinId) {
+                    const parent = await prisma.product.findUnique({ where: { id: item.parentProductId } });
+                    if (parent) {
+                        return prisma.productColorVariant.upsert({
+                            where: { awinId: item.awinId },
+                            update: { colorName: item.colour || 'Original', imageUrl: item.imageUrl, productUrl: item.productUrl, productId: parent.id },
+                            create: { awinId: item.awinId, colorName: item.colour || 'Original', imageUrl: item.imageUrl, productUrl: item.productUrl, productId: parent.id }
+                        });
+                    }
+                }
+                return prisma.product.upsert({
+                    where: { id: item.awinId },
+                    update: { categoryId: item.categoryId, category: item.category, productType: item.productType, colour: item.colour },
+                    create: item
+                });
+            });
             await Promise.all(operations);
             totalImported += batch.length;
         }

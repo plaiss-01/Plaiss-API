@@ -30,7 +30,7 @@ async function main() {
                 colorName: colorName,
                 imageUrl: variant.imageUrl,
                 productUrl: variant.productUrl,
-                awinId: variant.awinId,
+                awinId: variant.id,
             }
         });
         await prisma.product.delete({ where: { id: variant.id } });

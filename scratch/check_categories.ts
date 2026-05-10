@@ -1,29 +1,23 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
+import 'dotenv/config';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const prisma = new PrismaClient();
-  try {
-    const categories = await prisma.category.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 20
-    });
-    console.log('Last 20 categories:');
-    console.log(JSON.stringify(categories, null, 2));
-    
-    const count = await prisma.category.count();
-    console.log('Total categories:', count);
-    
-    const manualCount = await prisma.category.count({ where: { isAwin: false } });
-    console.log('Manual categories (isAwin: false):', manualCount);
-    
-    const awinCount = await prisma.category.count({ where: { isAwin: true } });
-    console.log('Awin categories (isAwin: true):', awinCount);
-    
-  } catch (error) {
-    console.error(error);
-  } finally {
-    await prisma.$disconnect();
-  }
+  console.log('Fetching unique categories from PROD table...');
+  const categories = await prisma.$queryRawUnsafe<{ category_name: string }[]>(`
+    SELECT DISTINCT category_name 
+    FROM "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" 
+    WHERE category_name IS NOT NULL AND category_name != ''
+    LIMIT 50
+  `);
+
+  console.log('Unique Categories found:');
+  console.log(categories.map(c => c.category_name));
 }
 
-main();
+main().finally(() => prisma.$disconnect());

@@ -24,44 +24,32 @@ export class AwinController {
   private readonly productListSelect = {
     id: true,
     name: true,
+    slug: true,
+    description: true,
     price: true,
     currency: true,
     imageUrl: true,
-    awThumbUrl: true,
-    largeImage: true,
-    alternateImage: true,
-    merchantThumbUrl: true,
-    category: true,
-    slug: true,
-    merchant: true,
     productUrl: true,
-    description: true,
-    createdAt: true,
-    colour: true,
-    brandName: true,
+    merchant: true,
+    category: true,
+    merchantProductId: true,
     merchantCategory: true,
-    merchantProductCategoryPath: true,
-    productType: true,
+    categoryId: true,
+    brandName: true,
+    colour: true,
     productModel: true,
-    sizeStockStatus: true,
-    basePrice: true,
-    displayPrice: true,
-    rrpPrice: true,
+    productType: true,
+    createdAt: true,
+    productModelClean: true,
+    colourClean: true,
+    sizeStockStatusClean: true,
+    isRecliner: true,
+    isSofaBed: true,
+    baseSku: true,
+    colourVariantNumber: true,
+    originalPriceClean: true,
+    discountedPriceClean: true,
     saving: true,
-    savingsPercent: true,
-    deliveryCost: true,
-    deliveryTime: true,
-    inStock: true,
-    stockStatus: true,
-    stockQuantity: true,
-    isForSale: true,
-    colorVariants: true,
-    attributes: {
-      select: {
-        attribute: { select: { name: true } },
-        attributeValue: { select: { value: true } },
-      },
-    },
   };
 
   private isUsableImageValue(value?: string | null): value is string {
@@ -312,10 +300,6 @@ export class AwinController {
         name: true,
         price: true,
         imageUrl: true,
-        awThumbUrl: true,
-        largeImage: true,
-        alternateImage: true,
-        merchantThumbUrl: true,
         brandName: true,
         category: true,
         merchant: true,
@@ -323,6 +307,78 @@ export class AwinController {
     });
 
     return products.map((product: any) => this.enhanceProductImages(product));
+  }
+
+  @Get('facets')
+  @ApiOperation({ summary: 'Get unique facets for filters based on category' })
+  async getFacets(
+    @Query('category') category?: string,
+    @Query('subs') subs?: string,
+  ) {
+    let allCategoryNames: string[] = [];
+    if (category) allCategoryNames.push(category);
+    if (subs) allCategoryNames = allCategoryNames.concat(subs.split(','));
+
+    if (allCategoryNames.length === 0) {
+      return { sizes: [], colors: [], materials: [], priceMin: 0, priceMax: 0 };
+    }
+
+    // 1. Fetch all unique categories first (very small list)
+    const allUniqueCats = await (this.prisma.product as any).findMany({
+      distinct: ['category'],
+      select: { category: true },
+    });
+
+    // 2. Filter them in JavaScript (lightning fast!)
+    const matchedCats = allUniqueCats
+      .map((c: any) => c.category)
+      .filter((c: string) => 
+        c && allCategoryNames.some(name => c.toLowerCase().includes(name.toLowerCase()))
+      );
+
+    // Fallback if none matched
+    if (matchedCats.length === 0) {
+      matchedCats.push(...allCategoryNames);
+    }
+
+    const where: any = {
+      category: { in: matchedCats }
+    };
+
+    const [sizes, colors, materials] = await Promise.all([
+      (this.prisma.product as any).findMany({
+        where,
+        distinct: ['sizeStockStatusClean'],
+        select: { sizeStockStatusClean: true },
+      }),
+      (this.prisma.product as any).findMany({
+        where,
+        distinct: ['colourClean'],
+        select: { colourClean: true },
+      }),
+      (this.prisma.product as any).findMany({
+        where,
+        distinct: ['productModelClean'],
+        select: { productModelClean: true },
+      }),
+    ]);
+
+    // For prices, we can just do a simple findMany and calculate or use aggregate if available
+    const productsForPrice = await (this.prisma.product as any).findMany({
+      where,
+      select: { discountedPriceClean: true },
+      take: 1000, // Limit for price calculation speed
+    });
+
+    const prices = productsForPrice.map((p: any) => p.discountedPriceClean).filter(Boolean);
+
+    return {
+      sizes: sizes.map((s: any) => s.sizeStockStatusClean).filter(Boolean),
+      colors: colors.map((c: any) => c.colourClean).filter(Boolean),
+      materials: materials.map((m: any) => m.productModelClean).filter(Boolean),
+      priceMin: prices.length ? Math.min(...prices) : 0,
+      priceMax: prices.length ? Math.max(...prices) : 0,
+    };
   }
 
   @Get('products')
@@ -425,6 +481,11 @@ export class AwinController {
       let uniqueIds = Array.from(new Set(allCategoryIds));
       let uniqueNames = Array.from(new Set(allCategoryNames));
 
+      // Always include the requested category name in the search terms!
+      if (category && !uniqueNames.some(n => n.toLowerCase() === category.toLowerCase())) {
+        uniqueNames.push(category);
+      }
+
       // FALLBACK LOGIC: If we found target categories but they have 0 products (check via pre-calculated count if possible, or just prepare OR)
       // Actually, it's better to do this after the query if total is 0. 
       // But we can also proactively add parents if the user wants "combination... if not available then use main".
@@ -450,7 +511,6 @@ export class AwinController {
       });
 
       where.OR = [
-        { internalCategoryId: { in: uniqueIds } },
         { category: { in: uniqueNames, mode: 'insensitive' } },
         { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
         ...keywordConditions,
@@ -464,16 +524,16 @@ export class AwinController {
       const andConditions: any[] = [];
       
       if (colors) {
-        const array = colors.split(',').map(s => s.trim());
+        const array = colors.replace(/\+/g, ' ').split(',').map(s => s.trim());
         andConditions.push({ OR: array.map(val => ({ colour: { equals: val, mode: 'insensitive' as const } })) });
       }
       if (sizes) {
-        const array = sizes.split(',').map(s => s.trim());
-        andConditions.push({ OR: array.map(val => ({ sizeStockStatus: { equals: val, mode: 'insensitive' as const } })) });
+        const array = sizes.replace(/\+/g, ' ').split(',').map(s => s.trim());
+        andConditions.push({ OR: array.map(val => ({ sizeStockStatusClean: { contains: val, mode: 'insensitive' as const } })) });
       }
       if (materials) {
-        const array = materials.split(',').map(s => s.trim());
-        andConditions.push({ OR: array.map(val => ({ productModel: { equals: val, mode: 'insensitive' as const } })) });
+        const array = materials.replace(/\+/g, ' ').split(',').map(s => s.trim());
+        andConditions.push({ OR: array.map(val => ({ productModelClean: { contains: val, mode: 'insensitive' as const } })) });
       }
       if (minPrice || maxPrice) {
         const priceCond: any = {};
@@ -547,7 +607,6 @@ export class AwinController {
                (this.prisma.product as any).findMany({
                  where: {
                    OR: [
-                     { internalCategoryId: parent.id },
                      { category: { contains: parent.name, mode: 'insensitive' } }
                    ]
                  },
@@ -671,14 +730,14 @@ export class AwinController {
     const { data: allCategories, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
 
     const counts = await (this.prisma.product as any).groupBy({
-      by: ['internalCategoryId'],
+      by: ['category'],
       _count: { _all: true }
     });
 
     const countMap: Record<string, number> = {};
     (counts as any[]).forEach(c => {
-      if (c.internalCategoryId) {
-        countMap[c.internalCategoryId] = c._count._all;
+      if (c.category) {
+        countMap[c.category] = c._count._all;
       }
     });
 
@@ -687,9 +746,9 @@ export class AwinController {
     // 3. Pre-calculate deep counts iteratively (bottom-up is better, but this single-pass recursive with memo is okay)
     // Actually, let's do a proper iterative pre-calculation for maximum speed
     const calculateAllCounts = () => {
-      // Initialize with direct counts using ID
+      // Initialize with direct counts using category name!
       allCategories.forEach(cat => {
-        memo.set(cat.id, countMap[cat.id] || 0);
+        memo.set(cat.id, countMap[cat.name] || 0);
       });
 
       // Simple way: multiple passes or a topological sort. 
@@ -779,9 +838,16 @@ export class AwinController {
   @ApiOperation({ summary: 'Get a product by slug' })
   @ApiResponse({ status: 200, description: 'Return the product.' })
   async getProductBySlug(@Param('slug') slug: string) {
+    // Extract ID from the end of the slug (e.g. -41778241000)
+    const idMatch = slug.match(/-(\d+)$/);
+    const productId = idMatch ? idMatch[1] : null;
+
     const product = await (this.prisma.product as any).findFirst({
       where: {
-        slug: { equals: slug, mode: 'insensitive' }
+        OR: [
+          { slug: { equals: slug, mode: 'insensitive' as const } },
+          productId ? { id: productId } : undefined,
+        ].filter(Boolean)
       },
       include: {
         colorVariants: true,

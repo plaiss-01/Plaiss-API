@@ -16,9 +16,9 @@ async function main() {
         return;
     }
     const products = await prisma.product.findMany({
-        where: { internalCategoryId: leatherSofaCat.id },
+        where: { category: { contains: leatherSofaCat.name, mode: 'insensitive' } },
         take: 5,
-        select: { name: true, category: true, internalCategoryId: true }
+        select: { name: true, category: true }
     });
     console.log(`Products in Leather Sofas (ID: ${leatherSofaCat.id}):`);
     products.forEach(p => console.log(`- ${p.name} (String Cat: ${p.category})`));

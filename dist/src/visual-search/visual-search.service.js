@@ -68,7 +68,6 @@ let VisualSearchService = VisualSearchService_1 = class VisualSearchService {
                     ...keywords.map(kw => ({ name: { contains: kw, mode: 'insensitive' } })),
                     ...keywords.map(kw => ({ description: { contains: kw, mode: 'insensitive' } })),
                     ...keywords.map(kw => ({ category: { contains: kw, mode: 'insensitive' } })),
-                    ...keywords.map(kw => ({ keywords: { contains: kw, mode: 'insensitive' } })),
                 ],
             },
             take: 20,

@@ -64,7 +64,6 @@ export class VisualSearchService {
           ...keywords.map(kw => ({ name: { contains: kw, mode: 'insensitive' as const } })),
           ...keywords.map(kw => ({ description: { contains: kw, mode: 'insensitive' as const } })),
           ...keywords.map(kw => ({ category: { contains: kw, mode: 'insensitive' as const } })),
-          ...keywords.map(kw => ({ keywords: { contains: kw, mode: 'insensitive' as const } })),
         ],
       },
       take: 20,

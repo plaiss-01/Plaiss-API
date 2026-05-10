@@ -8,14 +8,12 @@ async function main() {
       OR: [
         { category: { contains: 'Kitchen', mode: 'insensitive' } },
         { merchantCategory: { contains: 'Kitchen', mode: 'insensitive' } },
-        { merchantProductCategoryPath: { contains: 'Kitchen', mode: 'insensitive' } },
         { name: { contains: 'Kitchen', mode: 'insensitive' } }
       ]
     },
     select: {
       category: true,
-      merchantCategory: true,
-      merchantProductCategoryPath: true
+      merchantCategory: true
     },
     take: 20
   });

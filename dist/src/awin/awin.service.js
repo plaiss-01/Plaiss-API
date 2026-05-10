@@ -206,7 +206,7 @@ let AwinService = AwinService_1 = class AwinService {
                     const potentialAwinId = awinIdMatch ? awinIdMatch[1] : null;
                     let exists = false;
                     if (potentialAwinId) {
-                        const existing = await this.prisma.product.findUnique({ where: { awinId: potentialAwinId } });
+                        const existing = await this.prisma.product.findUnique({ where: { id: potentialAwinId } });
                         if (existing)
                             exists = true;
                     }
@@ -478,6 +478,11 @@ let AwinService = AwinService_1 = class AwinService {
                 if (!mapped) {
                     skipped++;
                 }
+                else if (mapped.productModelClean === 'Unknown' ||
+                    mapped.colourClean === 'Unknown' ||
+                    mapped.sizeStockStatusClean === 'Unknown') {
+                    skipped++;
+                }
                 else {
                     mappedRows.push(mapped);
                 }
@@ -590,9 +595,6 @@ let AwinService = AwinService_1 = class AwinService {
     }
     async loadDevToProd(replace = true, syncProductTable = true, jobId) {
         await this.ensureAwinPipelineTables();
-        if (replace) {
-            await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.prod}"`);
-        }
         const [{ count: devRows }] = await this.prisma.$queryRawUnsafe(`SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.dev}"`);
         if (jobId) {
             this.statusService.updateJob(jobId, 0, `Copying ${devRows} reviewed DEV rows to PROD...`, syncProductTable ? (devRows || 1) * 2 : devRows || 1);
@@ -651,6 +653,15 @@ let AwinService = AwinService_1 = class AwinService {
             this.statusService.updateJob(jobId, devRows, syncProductTable
                 ? `PROD has ${count} rows. Syncing Plaiss products...`
                 : `PROD has ${count} rows.`);
+        }
+        if (syncProductTable) {
+            this.logger.log('Running deduplication on PROD data...');
+            try {
+                await this.deduplicateProducts();
+            }
+            catch (err) {
+                this.logger.error(`Deduplication failed during promotion: ${err.message}`);
+            }
         }
         const syncedProducts = syncProductTable
             ? await this.syncProductModelFromAwinProd(jobId, devRows, (devRows || 1) * 2)
@@ -781,7 +792,7 @@ let AwinService = AwinService_1 = class AwinService {
         const awProductId = getVal(['aw_product_id', 'awproductid', 'productid', 'id']);
         const productName = getVal(['product_name', 'productname', 'name', 'title']);
         const price = this.toNullableFloat(getVal(['search_price', 'price', 'store_price']));
-        const imageUrl = this.toHttps(getVal(['aw_image_url', 'large_image', 'merchant_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']));
+        const imageUrl = this.toHttps(getVal(['merchant_image_url', 'aw_image_url', 'large_image', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']));
         const rawProductType = getVal(['product_type']);
         const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
         const categoryName = this.extractLeafCategory(rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']));
@@ -902,7 +913,7 @@ let AwinService = AwinService_1 = class AwinService {
         attributeValues.forEach(v => attributeValueCache.set(`${v.attributeId}_${v.value}`, v.id));
         const insertBatchSize = 1000;
         const fields = [
-            'name', 'slug', 'description', 'price', 'currency', 'imageUrl', 'productUrl',
+            'id', 'name', 'slug', 'description', 'price', 'currency', 'imageUrl', 'productUrl',
             'merchant', 'category', 'internalCategoryId', 'merchantProductId',
             'merchantCategory', 'categoryId', 'brandName', 'colour', 'productModel',
             'productType', 'sizeStockStatus', 'saving', 'basePrice', 'displayPrice', 'awinId'
@@ -919,6 +930,7 @@ let AwinService = AwinService_1 = class AwinService {
                     }
                 }
                 productsToUpsert.push({
+                    id: (0, crypto_1.randomUUID)(),
                     name: row.product_name,
                     slug: row.slug,
                     description: row.description,
@@ -953,14 +965,14 @@ let AwinService = AwinService_1 = class AwinService {
                     values.push(value);
                 });
                 const rowPlaceholders = fields.map((_, fieldIndex) => `$${offset + fieldIndex + 1}`);
-                return `(${rowPlaceholders.join(', ')})`;
+                return `(${rowPlaceholders.join(', ')}, NOW())`;
             });
             const query = `
         INSERT INTO "Product" (
-          name, slug, description, price, currency, "imageUrl", "productUrl",
+          id, name, slug, description, price, currency, "imageUrl", "productUrl",
           merchant, category, "internalCategoryId", "merchantProductId",
           "merchantCategory", "categoryId", "brandName", colour, "productModel",
-          "productType", "sizeStockStatus", saving, "basePrice", "displayPrice", "awinId"
+          "productType", "sizeStockStatus", saving, "basePrice", "displayPrice", "awinId", "updatedAt"
         )
         VALUES ${placeholders.join(', ')}
         ON CONFLICT ("awinId") DO UPDATE SET
@@ -984,7 +996,8 @@ let AwinService = AwinService_1 = class AwinService {
           "sizeStockStatus" = EXCLUDED."sizeStockStatus",
           saving = EXCLUDED.saving,
           "basePrice" = EXCLUDED."basePrice",
-          "displayPrice" = EXCLUDED."displayPrice"
+          "displayPrice" = EXCLUDED."displayPrice",
+          "updatedAt" = NOW()
         RETURNING id, "awinId"
       `;
             const result = await this.prisma.$queryRawUnsafe(query, ...values);
@@ -1355,7 +1368,18 @@ let AwinService = AwinService_1 = class AwinService {
             }
         }
         const finalPrice = parseFloat(getVal(['search_price', 'price'])) || 0;
-        const finalImageUrl = (getVal(['aw_image_url', 'large_image', 'merchant_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']) || '').replace('http://', 'https://');
+        const imageKeys = ['merchant_image_url', 'large_image', 'aw_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url'];
+        let finalImageUrl = '';
+        for (const key of imageKeys) {
+            const val = getVal([key]);
+            if (val && !val.includes('noimage.gif') && !val.includes('no_image')) {
+                finalImageUrl = val.replace('http://', 'https://');
+                break;
+            }
+        }
+        if (!finalImageUrl) {
+            finalImageUrl = (getVal(imageKeys) || '').replace('http://', 'https://');
+        }
         if (!productName || productName === 'Unknown Product' || finalPrice === 0 || !finalImageUrl || !finalCategory || finalCategory === 'collection') {
             throw new Error(`Product has incomplete attributes. Name: ${productName}, Price: ${finalPrice}, Category: ${finalCategory}. Must not import.`);
         }
@@ -1366,15 +1390,7 @@ let AwinService = AwinService_1 = class AwinService {
             description: getVal(['description', 'product_description']),
             price: parseFloat(getVal(['search_price', 'price'])) || 0,
             currency: getVal(['currency']),
-            imageUrl: (getVal([
-                'aw_image_url',
-                'large_image',
-                'merchant_image_url',
-                'image_url',
-                'alternate_image',
-                'image',
-                'aw_thumb_url'
-            ]) || '').replace('http://', 'https://'),
+            imageUrl: finalImageUrl,
             productUrl: getVal(['aw_deep_link', 'product_url', 'url']),
             merchant: getVal(['merchant_name', 'merchant', 'store_name']),
             category: finalCategory,
@@ -1507,7 +1523,7 @@ let AwinService = AwinService_1 = class AwinService {
             return { id: mainProductIdToUse, isVariant: true };
         }
         const product = await this.prisma.product.upsert({
-            where: { awinId: awProductId },
+            where: { id: awProductId },
             update: productData,
             create: {
                 ...productData,
@@ -1575,7 +1591,7 @@ let AwinService = AwinService_1 = class AwinService {
                 }
             }
             const product = await this.prisma.product.upsert({
-                where: { awinId: awinId },
+                where: { id: awinId },
                 update: {
                     name,
                     slug: this.slugify(name, awinId),
@@ -1689,7 +1705,15 @@ let AwinService = AwinService_1 = class AwinService {
     async deduplicateProducts() {
         this.logger.log('Starting global product deduplication...');
         const allProducts = await this.prisma.product.findMany({
-            include: { colorVariants: true },
+            select: {
+                id: true,
+                name: true,
+                description: true,
+                colour: true,
+                imageUrl: true,
+                productUrl: true,
+                colorVariants: true,
+            }
         });
         const groups = new Map();
         allProducts.forEach((p) => {
@@ -1719,7 +1743,7 @@ let AwinService = AwinService_1 = class AwinService {
                 try {
                     const colorName = v.colour || v.name.split(' ').find((word) => ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold'].includes(word.toLowerCase())) || 'Original';
                     await this.prisma.productColorVariant.upsert({
-                        where: { awinId: v.awinId },
+                        where: { awinId: v.id },
                         update: {
                             colorName,
                             imageUrl: v.imageUrl,
@@ -1740,7 +1764,7 @@ let AwinService = AwinService_1 = class AwinService {
                             data: { productId: master.id }
                         });
                     }
-                    await this.prisma.product.delete({ where: { id: v.id } });
+                    await this.prisma.$executeRawUnsafe(`DELETE FROM "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" WHERE "aw_product_id" = $1`, v.id);
                     mergedCount++;
                     variantCount++;
                 }

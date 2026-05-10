@@ -20,21 +20,22 @@ async function main() {
             childrenMap.set(c.parentId, children);
         }
     });
-    function getDescendants(id) {
-        let ids = [id];
+    function getDescendantNames(id) {
+        const cat = allCats.find(c => c.id === id);
+        let names = cat ? [cat.name] : [];
         const children = childrenMap.get(id) || [];
         for (const child of children) {
-            ids = ids.concat(getDescendants(child.id));
+            names = names.concat(getDescendantNames(child.id));
         }
-        return ids;
+        return names;
     }
-    const descendantIds = getDescendants(sofaRoot.id);
-    console.log(`Sofas Descendant IDs Count: ${descendantIds.length}`);
+    const descendantNames = getDescendantNames(sofaRoot.id);
+    console.log(`Sofas Descendant Names Count: ${descendantNames.length}`);
     const totalProducts = await prisma.product.count({
-        where: { internalCategoryId: { in: descendantIds } }
+        where: { category: { in: descendantNames } }
     });
     const rootOnlyProducts = await prisma.product.count({
-        where: { internalCategoryId: sofaRoot.id }
+        where: { category: sofaRoot.name }
     });
     console.log(`Total Combined Products: ${totalProducts}`);
     console.log(`Root Only Products: ${rootOnlyProducts}`);

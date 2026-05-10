@@ -39,7 +39,7 @@ async function main() {
         colorName: colorName,
         imageUrl: variant.imageUrl,
         productUrl: variant.productUrl,
-        awinId: variant.awinId,
+        awinId: variant.id,
       }
     });
 

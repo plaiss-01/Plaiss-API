@@ -39,44 +39,32 @@ let AwinController = class AwinController {
     productListSelect = {
         id: true,
         name: true,
+        slug: true,
+        description: true,
         price: true,
         currency: true,
         imageUrl: true,
-        awThumbUrl: true,
-        largeImage: true,
-        alternateImage: true,
-        merchantThumbUrl: true,
-        category: true,
-        slug: true,
-        merchant: true,
         productUrl: true,
-        description: true,
-        createdAt: true,
-        colour: true,
-        brandName: true,
+        merchant: true,
+        category: true,
+        merchantProductId: true,
         merchantCategory: true,
-        merchantProductCategoryPath: true,
-        productType: true,
+        categoryId: true,
+        brandName: true,
+        colour: true,
         productModel: true,
-        sizeStockStatus: true,
-        basePrice: true,
-        displayPrice: true,
-        rrpPrice: true,
+        productType: true,
+        createdAt: true,
+        productModelClean: true,
+        colourClean: true,
+        sizeStockStatusClean: true,
+        isRecliner: true,
+        isSofaBed: true,
+        baseSku: true,
+        colourVariantNumber: true,
+        originalPriceClean: true,
+        discountedPriceClean: true,
         saving: true,
-        savingsPercent: true,
-        deliveryCost: true,
-        deliveryTime: true,
-        inStock: true,
-        stockStatus: true,
-        stockQuantity: true,
-        isForSale: true,
-        colorVariants: true,
-        attributes: {
-            select: {
-                attribute: { select: { name: true } },
-                attributeValue: { select: { value: true } },
-            },
-        },
     };
     isUsableImageValue(value) {
         if (!value)
@@ -271,16 +259,65 @@ let AwinController = class AwinController {
                 name: true,
                 price: true,
                 imageUrl: true,
-                awThumbUrl: true,
-                largeImage: true,
-                alternateImage: true,
-                merchantThumbUrl: true,
                 brandName: true,
                 category: true,
                 merchant: true,
             }
         });
         return products.map((product) => this.enhanceProductImages(product));
+    }
+    async getFacets(category, subs) {
+        let allCategoryNames = [];
+        if (category)
+            allCategoryNames.push(category);
+        if (subs)
+            allCategoryNames = allCategoryNames.concat(subs.split(','));
+        if (allCategoryNames.length === 0) {
+            return { sizes: [], colors: [], materials: [], priceMin: 0, priceMax: 0 };
+        }
+        const allUniqueCats = await this.prisma.product.findMany({
+            distinct: ['category'],
+            select: { category: true },
+        });
+        const matchedCats = allUniqueCats
+            .map((c) => c.category)
+            .filter((c) => c && allCategoryNames.some(name => c.toLowerCase().includes(name.toLowerCase())));
+        if (matchedCats.length === 0) {
+            matchedCats.push(...allCategoryNames);
+        }
+        const where = {
+            category: { in: matchedCats }
+        };
+        const [sizes, colors, materials] = await Promise.all([
+            this.prisma.product.findMany({
+                where,
+                distinct: ['sizeStockStatusClean'],
+                select: { sizeStockStatusClean: true },
+            }),
+            this.prisma.product.findMany({
+                where,
+                distinct: ['colourClean'],
+                select: { colourClean: true },
+            }),
+            this.prisma.product.findMany({
+                where,
+                distinct: ['productModelClean'],
+                select: { productModelClean: true },
+            }),
+        ]);
+        const productsForPrice = await this.prisma.product.findMany({
+            where,
+            select: { discountedPriceClean: true },
+            take: 1000,
+        });
+        const prices = productsForPrice.map((p) => p.discountedPriceClean).filter(Boolean);
+        return {
+            sizes: sizes.map((s) => s.sizeStockStatusClean).filter(Boolean),
+            colors: colors.map((c) => c.colourClean).filter(Boolean),
+            materials: materials.map((m) => m.productModelClean).filter(Boolean),
+            priceMin: prices.length ? Math.min(...prices) : 0,
+            priceMax: prices.length ? Math.max(...prices) : 0,
+        };
     }
     async getAllProducts(page = '1', limit = '50', category, subs, search, colors, sizes, materials, minPrice, maxPrice) {
         const p = parseInt(page, 10) || 1;
@@ -352,6 +389,9 @@ let AwinController = class AwinController {
             }
             let uniqueIds = Array.from(new Set(allCategoryIds));
             let uniqueNames = Array.from(new Set(allCategoryNames));
+            if (category && !uniqueNames.some(n => n.toLowerCase() === category.toLowerCase())) {
+                uniqueNames.push(category);
+            }
             console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
             const keywordConditions = [];
             uniqueNames.forEach(name => {
@@ -364,7 +404,6 @@ let AwinController = class AwinController {
                 }
             });
             where.OR = [
-                { internalCategoryId: { in: uniqueIds } },
                 { category: { in: uniqueNames, mode: 'insensitive' } },
                 { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
                 ...keywordConditions,
@@ -374,16 +413,16 @@ let AwinController = class AwinController {
         if (hasFilters) {
             const andConditions = [];
             if (colors) {
-                const array = colors.split(',').map(s => s.trim());
+                const array = colors.replace(/\+/g, ' ').split(',').map(s => s.trim());
                 andConditions.push({ OR: array.map(val => ({ colour: { equals: val, mode: 'insensitive' } })) });
             }
             if (sizes) {
-                const array = sizes.split(',').map(s => s.trim());
-                andConditions.push({ OR: array.map(val => ({ sizeStockStatus: { equals: val, mode: 'insensitive' } })) });
+                const array = sizes.replace(/\+/g, ' ').split(',').map(s => s.trim());
+                andConditions.push({ OR: array.map(val => ({ sizeStockStatusClean: { contains: val, mode: 'insensitive' } })) });
             }
             if (materials) {
-                const array = materials.split(',').map(s => s.trim());
-                andConditions.push({ OR: array.map(val => ({ productModel: { equals: val, mode: 'insensitive' } })) });
+                const array = materials.replace(/\+/g, ' ').split(',').map(s => s.trim());
+                andConditions.push({ OR: array.map(val => ({ productModelClean: { contains: val, mode: 'insensitive' } })) });
             }
             if (minPrice || maxPrice) {
                 const priceCond = {};
@@ -445,7 +484,6 @@ let AwinController = class AwinController {
                             this.prisma.product.findMany({
                                 where: {
                                     OR: [
-                                        { internalCategoryId: parent.id },
                                         { category: { contains: parent.name, mode: 'insensitive' } }
                                     ]
                                 },
@@ -545,19 +583,19 @@ let AwinController = class AwinController {
     async getCategories() {
         const { data: allCategories, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
         const counts = await this.prisma.product.groupBy({
-            by: ['internalCategoryId'],
+            by: ['category'],
             _count: { _all: true }
         });
         const countMap = {};
         counts.forEach(c => {
-            if (c.internalCategoryId) {
-                countMap[c.internalCategoryId] = c._count._all;
+            if (c.category) {
+                countMap[c.category] = c._count._all;
             }
         });
         const memo = new Map();
         const calculateAllCounts = () => {
             allCategories.forEach(cat => {
-                memo.set(cat.id, countMap[cat.id] || 0);
+                memo.set(cat.id, countMap[cat.name] || 0);
             });
         };
         const getDeepCount = (catId, visited = new Set()) => {
@@ -627,9 +665,14 @@ let AwinController = class AwinController {
         return filteredRoots;
     }
     async getProductBySlug(slug) {
+        const idMatch = slug.match(/-(\d+)$/);
+        const productId = idMatch ? idMatch[1] : null;
         const product = await this.prisma.product.findFirst({
             where: {
-                slug: { equals: slug, mode: 'insensitive' }
+                OR: [
+                    { slug: { equals: slug, mode: 'insensitive' } },
+                    productId ? { id: productId } : undefined,
+                ].filter(Boolean)
             },
             include: {
                 colorVariants: true,
@@ -761,6 +804,15 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getMixBrandsProducts", null);
+__decorate([
+    (0, common_1.Get)('facets'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get unique facets for filters based on category' }),
+    __param(0, (0, common_1.Query)('category')),
+    __param(1, (0, common_1.Query)('subs')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "getFacets", null);
 __decorate([
     (0, common_1.Get)('products'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all saved products with pagination' }),

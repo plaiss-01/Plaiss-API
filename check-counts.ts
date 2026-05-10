@@ -9,7 +9,7 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   const total = await prisma.product.count();
-  const linked = await prisma.product.count({ where: { internalCategoryId: { not: null } } });
+  const linked = await prisma.product.count({ where: { category: { not: null } } });
   console.log(`Total Products: ${total}`);
   console.log(`Linked Products: ${linked}`);
 }

@@ -11,15 +11,12 @@ async function main() {
   const products = await prisma.product.findMany({
     where: { 
       name: { contains: 'Flex Corduroy', mode: 'insensitive' }
-    },
-    include: {
-      colorVariants: true
     }
   });
 
   console.log(`Found ${products.length} products matching "Flex Corduroy":`);
   products.forEach(p => {
-    console.log(`- ID: ${p.id}, Name: ${p.name}, Colour: ${p.colour}, Variants: ${p.colorVariants.length}`);
+    console.log(`- ID: ${p.id}, Name: ${p.name}, Colour: ${p.colour}`);
   });
 }
 
