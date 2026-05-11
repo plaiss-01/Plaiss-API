@@ -748,9 +748,7 @@ export class AwinService {
       }
     }
 
-    const syncedProducts = syncProductTable
-      ? await this.syncProductModelFromAwinProd(jobId, devRows, (devRows || 1) * 2)
-      : 0;
+    const syncedProducts = 0; // Disabled redundant sync to Product table (Single Prod Table design)
 
     // Clear DEV table after successful promotion
     this.logger.log('Clearing DEV table after promotion...');
@@ -1091,13 +1089,8 @@ export class AwinService {
       categoryCache.set(c.name.toLowerCase().trim(), { id: c.id, name: c.name });
     });
 
-    const attributes = await (this.prisma as any).attribute.findMany();
-    const attributeCache = new Map<string, string>(); // name -> id
-    attributes.forEach(a => attributeCache.set(a.name, a.id));
 
-    const attributeValues = await (this.prisma as any).attributeValue.findMany();
-    const attributeValueCache = new Map<string, string>(); // `${attributeId}_${value}` -> id
-    attributeValues.forEach(v => attributeValueCache.set(`${v.attributeId}_${v.value}`, v.id));
+
 
     const insertBatchSize = 1000;
     const fields = [
@@ -1197,74 +1190,7 @@ export class AwinService {
 
       const result = await this.prisma.$queryRawUnsafe<Array<{id: string, awinId: string}>>(query, ...values);
       
-      // Map attribute values
-      const linksToInsert: any[] = [];
-      const prodIdMap = new Map<string, string>(); // awinId -> id
-      result.forEach(r => prodIdMap.set(r.awinId, r.id));
 
-      for (const row of chunk) {
-        const productId = prodIdMap.get(row.aw_product_id);
-        if (!productId) continue;
-
-        const attrs = {
-          Brand: row.brand_name,
-          Colour: row.colour_clean || row.colour,
-          ProductType: row.product_type,
-          Model: row.product_model_clean || row.product_model,
-          Size: row.size_stock_status_clean,
-          Recliner: row.is_recliner,
-          SofaBed: row.is_sofa_bed,
-        };
-
-        for (const [name, value] of Object.entries(attrs)) {
-          if (value && String(value).trim() !== '') {
-            const cleanValue = String(value).trim();
-            const cleanName = name.trim();
-
-            let attrId = attributeCache.get(cleanName);
-            if (!attrId) {
-              const attr = await (this.prisma as any).attribute.upsert({
-                where: { name: cleanName },
-                update: {},
-                create: { name: cleanName },
-              });
-              attrId = attr.id;
-              attributeCache.set(cleanName, attr.id);
-            }
-
-            let valId = attributeValueCache.get(`${attrId}_${cleanValue}`);
-            if (!valId) {
-              const av = await (this.prisma as any).attributeValue.upsert({
-                where: { attributeId_value: { attributeId: attrId, value: cleanValue } },
-                update: {},
-                create: { value: cleanValue, attributeId: attrId },
-              });
-              valId = av.id;
-              attributeValueCache.set(`${attrId}_${cleanValue}`, av.id);
-            }
-
-            linksToInsert.push({ productId, attributeId: attrId, attributeValueId: valId });
-          }
-        }
-      }
-
-      // Bulk insert links
-      if (linksToInsert.length > 0) {
-        const linkValues: any[] = [];
-        const linkPlaceholders = linksToInsert.map((link, linkIndex) => {
-          const offset = linkIndex * 3;
-          linkValues.push(link.productId, link.attributeId, link.attributeValueId);
-          return `(gen_random_uuid(), $${offset + 1}, $${offset + 2}, $${offset + 3}, NOW(), NOW())`;
-        });
-
-        const linkQuery = `
-          INSERT INTO "ProductAttribute" ("id", "productId", "attributeId", "attributeValueId", "createdAt", "updatedAt")
-          VALUES ${linkPlaceholders.join(', ')}
-          ON CONFLICT ("productId", "attributeId") DO UPDATE SET "attributeValueId" = EXCLUDED."attributeValueId"
-        `;
-
-        await this.prisma.$executeRawUnsafe(linkQuery, ...linkValues);
-      }
 
       synced += chunk.length;
 
@@ -1961,6 +1887,7 @@ export class AwinService {
         imageUrl: true,
         productUrl: true,
         colorVariants: true,
+        rawRow: true,
       }
     });
 
@@ -1970,9 +1897,7 @@ export class AwinService {
       // Create a "Core Name" by stripping common variant terms
       let coreName = p.name
         .toLowerCase()
-        .replace(/\b(fabric|leather|velvet|chenille|linen|wood|metal|glass|gloss|matt|oak|pine|walnut|ash|marble)\b/gi, '')
-        .replace(/\b(\d+)\s*(seater|piece|set|pack|kg|g|cm|mm|m)\b/gi, '')
-        .replace(/^[0-9\s-]+/, '') // Strip leading numbers
+        .replace(/\b(red|blue|green|black|white|grey|gray|yellow|pink|purple|brown|beige|cream|teal|navy|charcoal|silver|gold|orange)\b/gi, '')
         .replace(/\s+/g, ' ')
         .trim();
 
@@ -1987,34 +1912,115 @@ export class AwinService {
     let mergedCount = 0;
     let variantCount = 0;
 
+    let batchInserts: any[] = [];
+    let batchDeletes: string[] = [];
+    const BATCH_SIZE = 1000;
+
+    const flushBatches = async (inserts: any[], deletes: string[]) => {
+      try {
+        if (inserts.length > 0) {
+          const insertQuery = `
+            INSERT INTO "ProductColorVariant" (id, product_id, color_name, image_url, product_url, awin_id)
+            VALUES ${inserts.map((_, i) => `(gen_random_uuid(), $${i*5 + 1}, $${i*5 + 2}, $${i*5 + 3}, $${i*5 + 4}, $${i*5 + 5})`).join(', ')}
+            ON CONFLICT DO NOTHING
+          `;
+          const flatInserts = inserts.flat();
+          await this.prisma.$executeRawUnsafe(insertQuery, ...flatInserts);
+        }
+
+        if (deletes.length > 0) {
+          const deleteQuery = `
+            DELETE FROM "AWIN_AFFILIAT_PRODUCTS_DATA_PROD"
+            WHERE "aw_product_id" IN (${deletes.map((_, i) => `$${i + 1}`).join(', ')})
+          `;
+          await this.prisma.$executeRawUnsafe(deleteQuery, ...deletes);
+        }
+      } catch (e) {
+        this.logger.error(`Batch operation failed: ${e.message}`);
+        throw e;
+      }
+    };
+
     for (const [key, products] of groups.entries()) {
       if (products.length <= 1) continue;
 
-      // Pick the best "Master" product (e.g., one with the most information or first imported)
       const sorted = products.sort((a, b) => (b.description?.length || 0) - (a.description?.length || 0));
       const master = sorted[0];
       const variants = sorted.slice(1);
 
+      const seenColors = new Set<string>();
+      const masterColor = master.colour || master.name.split(' ').find((word: string) => 
+        ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase())
+      );
+      if (masterColor) seenColors.add(masterColor.toLowerCase());
+
       for (const v of variants) {
-        try {
-          // Check if it already has color info
-          const colorName = v.colour || v.name.split(' ').find((word: string) => 
-            ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold'].includes(word.toLowerCase())
-          ) || 'Original';
+        const colorName = v.colour || v.name.split(' ').find((word: string) => 
+          ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase())
+        ) || 'Original';
 
+        const colorKey = colorName.toLowerCase();
+        
+        batchDeletes.push(v.id);
+        mergedCount++;
+        variantCount++;
 
+        if (seenColors.has(colorKey)) {
+          if (batchDeletes.length >= BATCH_SIZE) {
+            await flushBatches(batchInserts, batchDeletes);
+            this.logger.log(`Merged ${mergedCount} products...`);
+            batchInserts = [];
+            batchDeletes = [];
+          }
+          continue;
+        }
+        seenColors.add(colorKey);
 
-          // Delete the duplicate product using raw SQL to avoid Prisma validation errors on bad data
-          await this.prisma.$executeRawUnsafe(
-            `DELETE FROM "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" WHERE "aw_product_id" = $1`,
-            v.id
-          );
-          mergedCount++;
-          variantCount++;
-        } catch (err) {
-          this.logger.error(`Failed to merge ${v.name} into ${master.name}: ${err.message}`);
+        // Extract best image for the variant from rawRow if available
+        let rawData: any = {};
+        if (v.rawRow) {
+          try {
+            rawData = typeof v.rawRow === 'string' ? JSON.parse(v.rawRow) : v.rawRow;
+          } catch (e) { /* ignore */ }
+        }
+
+        const candidates = [
+          v.imageUrl,
+          rawData.alternate_image,
+          rawData.alternate_image_two,
+          rawData.alternate_image_three,
+          rawData.alternate_image_four,
+          rawData.merchant_image_url,
+          rawData.merchant_thumb_url,
+        ];
+
+        let bestImage = v.imageUrl || '';
+        for (const candidate of candidates) {
+          if (candidate && !candidate.includes('noimage.gif')) {
+            bestImage = candidate;
+            break;
+          }
+        }
+
+        const finalImage = bestImage.includes('noimage.gif') ? null : bestImage;
+        batchInserts.push([master.id, colorName, finalImage, v.productUrl || '', v.id]);
+        batchDeletes.push(v.id);
+
+        mergedCount++;
+        variantCount++;
+
+        if (batchInserts.length >= BATCH_SIZE) {
+          await flushBatches(batchInserts, batchDeletes);
+          this.logger.log(`Merged ${mergedCount} products...`);
+          batchInserts = [];
+          batchDeletes = [];
         }
       }
+    }
+
+    // Flush remaining
+    if (batchInserts.length > 0) {
+      await flushBatches(batchInserts, batchDeletes);
     }
 
     this.logger.log(`Deduplication complete. Merged ${mergedCount} products into variants.`);

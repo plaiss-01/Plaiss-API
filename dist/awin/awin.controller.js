@@ -55,6 +55,7 @@ let AwinController = class AwinController {
         productModel: true,
         productType: true,
         createdAt: true,
+        rawRow: true,
         productModelClean: true,
         colourClean: true,
         sizeStockStatusClean: true,
@@ -135,19 +136,33 @@ let AwinController = class AwinController {
         }
     }
     getBestProductImage(product) {
+        let rawData = {};
+        if (product.rawRow) {
+            try {
+                rawData = typeof product.rawRow === 'string' ? JSON.parse(product.rawRow) : product.rawRow;
+            }
+            catch (e) {
+            }
+        }
         const candidates = [
             product?.largeImage,
             product?.imageUrl,
+            rawData.alternate_image,
+            rawData.alternate_image_two,
+            rawData.alternate_image_three,
+            rawData.alternate_image_four,
             product?.alternateImage,
+            rawData.merchant_image_url,
+            rawData.merchant_thumb_url,
             product?.merchantThumbUrl,
             product?.awThumbUrl,
         ];
         for (const candidate of candidates) {
             const image = this.normalizeProductImageUrl(candidate);
-            if (image)
+            if (image && !image.includes('noimage.gif'))
                 return image;
         }
-        return '';
+        return candidates[0] || '';
     }
     enhanceProductImages(product) {
         if (!product)
@@ -659,12 +674,14 @@ let AwinController = class AwinController {
                     productId ? { id: productId } : undefined,
                 ].filter(Boolean)
             },
+            select: this.productListSelect,
         });
         return this.enhanceProductImages(product);
     }
     async getProductById(id) {
         const product = await this.prisma.product.findUnique({
             where: { id },
+            select: this.productListSelect,
         });
         return this.enhanceProductImages(product);
     }

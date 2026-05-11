@@ -41,6 +41,7 @@ export class AwinController {
     productModel: true,
     productType: true,
     createdAt: true,
+    rawRow: true,
     productModelClean: true,
     colourClean: true,
     sizeStockStatusClean: true,
@@ -121,20 +122,36 @@ export class AwinController {
   }
 
   private getBestProductImage(product: any): string {
+    let rawData: any = {};
+    if (product.rawRow) {
+      try {
+        rawData = typeof product.rawRow === 'string' ? JSON.parse(product.rawRow) : product.rawRow;
+      } catch (e) {
+        // ignore
+      }
+    }
+
     const candidates = [
       product?.largeImage,
       product?.imageUrl,
+      rawData.alternate_image,
+      rawData.alternate_image_two,
+      rawData.alternate_image_three,
+      rawData.alternate_image_four,
       product?.alternateImage,
+      rawData.merchant_image_url,
+      rawData.merchant_thumb_url,
       product?.merchantThumbUrl,
       product?.awThumbUrl,
     ];
 
     for (const candidate of candidates) {
       const image = this.normalizeProductImageUrl(candidate);
-      if (image) return image;
+      if (image && !image.includes('noimage.gif')) return image;
     }
 
-    return '';
+    // Fallback to the first candidate if all fail (or return empty)
+    return candidates[0] || '';
   }
 
   private enhanceProductImages(product: any) {
@@ -826,7 +843,7 @@ export class AwinController {
           productId ? { id: productId } : undefined,
         ].filter(Boolean)
       },
-
+      select: this.productListSelect,
     });
     return this.enhanceProductImages(product);
   }
@@ -837,7 +854,7 @@ export class AwinController {
   async getProductById(@Param('id') id: string) {
     const product = await (this.prisma.product as any).findUnique({
       where: { id },
-
+      select: this.productListSelect,
     });
     return this.enhanceProductImages(product);
   }
