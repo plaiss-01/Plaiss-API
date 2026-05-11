@@ -44,4 +44,4 @@ ENV PORT=3001
 EXPOSE 3001
 
 # Use node directly for better signal handling
-CMD ["node", "dist/src/main.js"]
+CMD ["node", "dist/main.js"]
