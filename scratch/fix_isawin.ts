@@ -9,22 +9,12 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  const count = await prisma.productColorVariant.count();
-  console.log(`Total variants in DB: ${count}`);
-
-  const variants = await prisma.productColorVariant.findMany({
-    take: 5,
-    include: {
-      product: {
-        select: { name: true }
-      }
-    }
+  const result = await prisma.category.updateMany({
+    where: {},
+    data: { isAwin: true },
   });
 
-  console.log('Sample variants:');
-  for (const v of variants) {
-    console.log(`Product: "${v.product?.name}", Color: "${v.colorName}"`);
-  }
+  console.log(`Updated ${result.count} categories to isAwin: true.`);
 }
 
 main().finally(async () => {

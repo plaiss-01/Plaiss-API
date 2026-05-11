@@ -26,6 +26,31 @@ async function main() {
     `);
   }
 
+  // Debug query to see if Owenton products are grouped
+  const debugSql = `
+    WITH groups AS (
+      SELECT 
+        MIN(id) as primary_id,
+        TRIM(BOTH ' -_' FROM 
+          REGEXP_REPLACE(
+            REGEXP_REPLACE(LOWER(name), '\\y(in|with|color|colour)\\y', '', 'g'),
+            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
+            '', 
+            'gi'
+          )
+        ) as base_name,
+        "brandName",
+        "merchant",
+        COUNT(*) as count
+      FROM "Product"
+      GROUP BY base_name, "brandName", "merchant"
+      HAVING COUNT(*) > 1
+    )
+    SELECT * FROM groups WHERE base_name ~* 'owenton';
+  `;
+  const debugResults = await prisma.$queryRawUnsafe(debugSql);
+  console.log('Debug Results (Owenton):', debugResults);
+
   // 2. Now run the smart base name deduplication again
   console.log('Step 2: Grouping by smart base names...');
   const dedupSql = `
@@ -35,7 +60,7 @@ async function main() {
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
             REGEXP_REPLACE(LOWER(name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beig|teal|silver|gold|charcoal|anthracite)\\y', 
+            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
             '', 
             'gi'
           )
@@ -47,13 +72,13 @@ async function main() {
       HAVING COUNT(*) > 1
     ),
     variants AS (
-      SELECT p.id, p."colour", p."imageUrl", p."productUrl", p."awinId", g.primary_id, p.name
+      SELECT p.id, p."colour", p."imageUrl", p."productUrl", p.id as "awinId", g.primary_id, p.name
       FROM "Product" p
       JOIN groups g ON 
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
             REGEXP_REPLACE(LOWER(p.name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beig|teal|silver|gold|charcoal|anthracite)\\y', 
+            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
             '', 
             'gi'
           )
@@ -62,20 +87,22 @@ async function main() {
         AND p."merchant" = g."merchant"
       WHERE p.id != g.primary_id
     )
-    INSERT INTO "ProductColorVariant" ("id", "productId", "colorName", "imageUrl", "productUrl", "awinId")
+    INSERT INTO "ProductColorVariant" ("id", "productId", "colorName", "imageUrl", "productUrl", "awinId", "createdAt", "updatedAt")
     SELECT 
       gen_random_uuid(), 
       primary_id, 
       COALESCE("colour", 
         CASE 
-          WHEN name ~* '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beig|teal|silver|gold|charcoal|anthracite)\\y'
-          THEN REGEXP_REPLACE(name, '.*\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beig|teal|silver|gold|charcoal|anthracite)\\y.*', '\\1', 'gi')
+          WHEN name ~* '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y'
+          THEN REGEXP_REPLACE(name, '.*\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y.*', '\\1', 'gi')
           ELSE 'Unknown'
         END
       ), 
       "imageUrl", 
       "productUrl", 
-      "awinId"
+      "awinId",
+      NOW(),
+      NOW()
     FROM variants
     ON CONFLICT DO NOTHING;
   `;
@@ -87,7 +114,7 @@ async function main() {
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
             REGEXP_REPLACE(LOWER(name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beig|teal|silver|gold|charcoal|anthracite)\\y', 
+            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
             '', 
             'gi'
           )
@@ -106,7 +133,7 @@ async function main() {
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
             REGEXP_REPLACE(LOWER(p.name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beig|teal|silver|gold|charcoal|anthracite)\\y', 
+            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
             '', 
             'gi'
           )

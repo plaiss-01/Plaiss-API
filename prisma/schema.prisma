@@ -9,6 +9,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  relationMode = "prisma"
 }
 
 model Product {
@@ -22,7 +23,6 @@ model Product {
   productUrl  String?  @map("product_url")
   merchant    String?  @map("merchant_name")
   category    String?  @map("category_name")
-  internalCategory Category? @relation("ProductCategory", fields: [category], references: [name])
   
   merchantProductId           String? @map("merchant_product_id")
   merchantCategory            String? @map("merchant_category")
@@ -52,13 +52,56 @@ model Product {
   transformedAt        DateTime? @map("transformed_at")
   salesDiscount        String?   @map("sales_discount")
 
-  attributes           ProductAttribute[]
-  colorVariants        ProductColorVariant[]
+  // Relations
+  categoryRel         Category? @relation(fields: [category], references: [name], onDelete: Restrict, onUpdate: Restrict)
+  colourRel           Colour?   @relation(fields: [colourClean], references: [name])
+  sizeRel             Size?     @relation(fields: [sizeStockStatusClean], references: [name])
+  materialRel         Material? @relation(fields: [productModelClean], references: [name])
+  retailerRel         Retailer? @relation(fields: [merchant], references: [name])
+  colorVariants       ProductColorVariant[]
 
   @@map("AWIN_AFFILIAT_PRODUCTS_DATA_PROD")
   @@index([category])
   @@index([name])
   @@index([merchant])
+  @@index([colourClean])
+  @@index([sizeStockStatusClean])
+  @@index([productModelClean])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  isAwin    Boolean  @default(true)
+  parentId  String?
+  parent    Category?  @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children  Category[] @relation("CategoryToCategory")
+  products  Product[]
+}
+
+model Colour {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  products  Product[]
+}
+
+model Size {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  products  Product[]
+}
+
+model Material {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  products  Product[]
+}
+
+model Retailer {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  products  Product[]
 }
 
 
@@ -81,20 +124,7 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
-model Category {
-  id        String     @id @default(uuid())
-  name      String     @unique
-  slug      String     @unique
-  parentId  String?
-  parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
-  children  Category[] @relation("SubCategories")
-  isAwin    Boolean    @default(false)
-  isMerged  Boolean    @default(false)
-  order     Int        @default(0)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  products  Product[]  @relation("ProductCategory")
-}
+
 
 model PortfolioImage {
   id        String   @id @default(uuid())
@@ -118,54 +148,14 @@ model BlogPost {
   updatedAt   DateTime @updatedAt
 }
 
-model Attribute {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  values    AttributeValue[]
-  products  ProductAttribute[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model AttributeValue {
-  id          String   @id @default(uuid())
-  value       String
-  attributeId String
-  attribute   Attribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
-  products    ProductAttribute[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([attributeId, value])
-}
-
-model ProductAttribute {
-  id               String   @id @default(uuid())
-  productId        String
-  attributeId      String
-  attributeValueId String
-  
-  product          Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  attribute        Attribute      @relation(fields: [attributeId], references: [id], onDelete: Cascade)
-  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id], onDelete: Cascade)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([productId, attributeId])
-}
-
 model ProductColorVariant {
-  id          String   @id @default(uuid())
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  colorName   String
-  imageUrl    String?
-  productUrl  String?
-  awinId      String?  @unique
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([productId])
+  id         String  @id @default(cuid())
+  awinId     String  @unique @map("awin_id")
+  colorName  String  @map("color_name")
+  imageUrl   String? @map("image_url")
+  productUrl String? @map("product_url")
+  productId  String  @map("product_id")
+  product    Product @relation(fields: [productId], references: [id])
 }
+
+

@@ -1,0 +1,153 @@
+import { UsersService } from './users.service';
+import { RegisterIndividualDto } from './dto/register-individual.dto';
+export declare class UsersController {
+    private readonly usersService;
+    constructor(usersService: UsersService);
+    registerIndividual(dto: RegisterIndividualDto): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    registerDesigner(dto: any): Promise<{
+        portfolio: {
+            id: string;
+            createdAt: Date;
+            title: string | null;
+            url: string;
+            userId: string;
+        }[];
+    } & {
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    getAllUsers(): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }[]>;
+    getPendingDesigners(): Promise<any>;
+    getDesigners(): Promise<any>;
+    getDesignerById(id: string): Promise<({
+        portfolio: {
+            id: string;
+            createdAt: Date;
+            title: string | null;
+            url: string;
+            userId: string;
+        }[];
+    } & {
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }) | null>;
+    getUserById(id: string): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    } | null>;
+    updateUser(id: string, dto: any): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    deleteUser(id: string): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    approveDesigner(id: string, isApproved: boolean): Promise<any>;
+    login(dto: any): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+}

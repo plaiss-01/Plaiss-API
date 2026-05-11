@@ -1254,11 +1254,11 @@ export class AwinService {
         const linkPlaceholders = linksToInsert.map((link, linkIndex) => {
           const offset = linkIndex * 3;
           linkValues.push(link.productId, link.attributeId, link.attributeValueId);
-          return `($${offset + 1}, $${offset + 2}, $${offset + 3})`;
+          return `(gen_random_uuid(), $${offset + 1}, $${offset + 2}, $${offset + 3}, NOW(), NOW())`;
         });
 
         const linkQuery = `
-          INSERT INTO "ProductAttribute" ("productId", "attributeId", "attributeValueId")
+          INSERT INTO "ProductAttribute" ("id", "productId", "attributeId", "attributeValueId", "createdAt", "updatedAt")
           VALUES ${linkPlaceholders.join(', ')}
           ON CONFLICT ("productId", "attributeId") DO UPDATE SET "attributeValueId" = EXCLUDED."attributeValueId"
         `;
@@ -1767,26 +1767,7 @@ export class AwinService {
        }
     }
 
-    if (mainProductIdToUse && colour) {
-       // Save as variant
-       await (this.prisma as any).productColorVariant.upsert({
-          where: { awinId: awProductId },
-          update: {
-             colorName: colour,
-             imageUrl: productData.imageUrl,
-             productUrl: productData.productUrl,
-             productId: mainProductIdToUse
-          },
-          create: {
-             awinId: awProductId,
-             colorName: colour,
-             imageUrl: productData.imageUrl,
-             productUrl: productData.productUrl,
-             productId: mainProductIdToUse
-          }
-       });
-       return { id: mainProductIdToUse, isVariant: true };
-    }
+
 
     // Mapping Awin CSV columns to our schema
     const product = await (this.prisma as any).product.upsert({
@@ -1798,16 +1779,7 @@ export class AwinService {
       },
     });
 
-    // Normalize attributes for refining
-    await this.normalizeProductAttributes(product.id, {
-      Brand: productData.brandName,
-      Colour: productData.colour,
-      Condition: productData.condition,
-      ProductType: productData.productType,
-      Model: productData.productModel,
-      Material: getVal(['material']),
-      Size: getVal(['size'])
-    });
+
 
     return product;
   }
@@ -1916,13 +1888,7 @@ export class AwinService {
         },
       });
 
-      // Normalize Attributes for single products if any attributes are present
-      // Currently scrapeSingleProduct doesn't extract full attributes, but we ensure the hook exists
-      await this.normalizeProductAttributes(product.id, {
-        Brand: '',
-        Colour: '',
-        Condition: ''
-      });
+
 
       this.logger.log(`Successfully processed product: ${product.name} (ID: ${product.id})`);
       return product;
@@ -1982,35 +1948,7 @@ export class AwinService {
     }
   }
 
-  private async normalizeProductAttributes(productId: string, attributesMap: Record<string, string | undefined | null>) {
-    for (const [attrName, attrValue] of Object.entries(attributesMap)) {
-      if (!attrValue || attrValue.trim() === '') continue;
-      
-      const cleanValue = attrValue.trim();
-      const cleanName = attrName.trim();
 
-      // Ensure Attribute exists
-      const attribute = await (this.prisma as any).attribute.upsert({
-        where: { name: cleanName },
-        update: {},
-        create: { name: cleanName },
-      });
-
-      // Ensure AttributeValue exists
-      const attributeValue = await (this.prisma as any).attributeValue.upsert({
-        where: { attributeId_value: { attributeId: attribute.id, value: cleanValue } },
-        update: {},
-        create: { value: cleanValue, attributeId: attribute.id },
-      });
-
-      // Link to Product
-      await (this.prisma as any).productAttribute.upsert({
-        where: { productId_attributeId: { productId, attributeId: attribute.id } },
-        update: { attributeValueId: attributeValue.id },
-        create: { productId, attributeId: attribute.id, attributeValueId: attributeValue.id },
-      });
-    }
-  }
 
   async deduplicateProducts() {
     this.logger.log('Starting global product deduplication...');
@@ -2064,31 +2002,7 @@ export class AwinService {
             ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold'].includes(word.toLowerCase())
           ) || 'Original';
 
-          // Create variant
-          await (this.prisma as any).productColorVariant.upsert({
-            where: { awinId: v.id },
-            update: {
-              colorName,
-              imageUrl: v.imageUrl,
-              productUrl: v.productUrl,
-              productId: master.id,
-            },
-            create: {
-              awinId: v.awinId,
-              colorName,
-              imageUrl: v.imageUrl,
-              productUrl: v.productUrl,
-              productId: master.id,
-            },
-          });
 
-          // Move any existing variants of 'v' to 'master'
-          if (v.colorVariants && v.colorVariants.length > 0) {
-             await (this.prisma as any).productColorVariant.updateMany({
-                where: { productId: v.id },
-                data: { productId: master.id }
-             });
-          }
 
           // Delete the duplicate product using raw SQL to avoid Prisma validation errors on bad data
           await this.prisma.$executeRawUnsafe(

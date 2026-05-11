@@ -1,3 +1,4 @@
+// Triggering reload after prisma generate
 import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
@@ -50,6 +51,15 @@ export class AwinController {
     originalPriceClean: true,
     discountedPriceClean: true,
     saving: true,
+    colorVariants: {
+      select: {
+        id: true,
+        colorName: true,
+        imageUrl: true,
+        productUrl: true,
+        awinId: true,
+      }
+    },
   };
 
   private isUsableImageValue(value?: string | null): value is string {
@@ -131,30 +141,14 @@ export class AwinController {
     if (!product) return product;
 
     const img = this.getBestProductImage(product);
-    const colorVariants = (product.colorVariants || []).map((variant: any) => ({
-      ...variant,
-      imageUrl: this.normalizeProductImageUrl(variant.imageUrl) || null,
-    }));
-
     return {
       ...product,
       imageUrl: img,
       image: img,
       images: img ? [img] : [],
-      colorVariants,
-      colors: [
-        ...(product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : []),
-        ...colorVariants.map((variant: any) => ({
-          name: variant.colorName,
-          hex: variant.colorName,
-          imageUrl: variant.imageUrl,
-          productUrl: variant.productUrl,
-        })),
-      ],
-      normalizedAttributes: (product.attributes || []).reduce((acc: any, attr: any) => {
-        acc[attr.attribute.name] = attr.attributeValue.value;
-        return acc;
-      }, {}),
+      colorVariants: product.colorVariants || [],
+      colors: product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : [],
+      normalizedAttributes: {},
     };
   }
 
@@ -303,7 +297,7 @@ export class AwinController {
         brandName: true,
         category: true,
         merchant: true,
-        }
+      }
     });
 
     return products.map((product: any) => this.enhanceProductImages(product));
@@ -323,26 +317,10 @@ export class AwinController {
       return { sizes: [], colors: [], materials: [], priceMin: 0, priceMax: 0 };
     }
 
-    // 1. Fetch all unique categories first (very small list)
-    const allUniqueCats = await (this.prisma.product as any).findMany({
-      distinct: ['category'],
-      select: { category: true },
-    });
-
-    // 2. Filter them in JavaScript (lightning fast!)
-    const matchedCats = allUniqueCats
-      .map((c: any) => c.category)
-      .filter((c: string) => 
-        c && allCategoryNames.some(name => c.toLowerCase().includes(name.toLowerCase()))
-      );
-
-    // Fallback if none matched
-    if (matchedCats.length === 0) {
-      matchedCats.push(...allCategoryNames);
-    }
-
     const where: any = {
-      category: { in: matchedCats }
+      OR: allCategoryNames.map(name => ({
+        category: { contains: name, mode: 'insensitive' }
+      }))
     };
 
     const [sizes, colors, materials] = await Promise.all([
@@ -422,7 +400,7 @@ export class AwinController {
       const { data: allCats, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
 
       // Find the requested categories
-      const targetCats = allCats.filter(c => 
+      const targetCats = allCats.filter(c =>
         c.slug.toLowerCase() === category.toLowerCase() ||
         c.name.toLowerCase() === category.toLowerCase()
       );
@@ -445,14 +423,14 @@ export class AwinController {
 
       for (const cat of targetCats) {
         const children = childrenMap.get(cat.id) || [];
-        
+
         if (children.length > 0) {
           // STRICT COMBINATION: If category has children, ONLY use descendant IDs/Names
           // (exclude the parent's own ID and Name)
           for (const child of children) {
             const descendantIds = getDescendantIds(child.id);
             allCategoryIds.push(...descendantIds);
-            
+
             descendantIds.forEach(id => {
               const c = categoryMap.get(id);
               if (c) {
@@ -472,7 +450,7 @@ export class AwinController {
       if (subs) {
         const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
         allCategoryNames.push(...subArray);
-        
+
         // Also try to find IDs for these sub names
         const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
         allCategoryIds.push(...subCats.map(c => c.id));
@@ -489,12 +467,12 @@ export class AwinController {
       // FALLBACK LOGIC: If we found target categories but they have 0 products (check via pre-calculated count if possible, or just prepare OR)
       // Actually, it's better to do this after the query if total is 0. 
       // But we can also proactively add parents if the user wants "combination... if not available then use main".
-      
+
       // Let's stick to the current plan: 
       // 1. Unique IDs/Names from the target and its descendants.
       // 2. If the query returns 0, we will check parents in the fallback section.
 
-      
+
       console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
 
       // Build keyword contains conditions for each unique name (e.g. "Sofas" also matches "Fabric Sofas")
@@ -519,10 +497,10 @@ export class AwinController {
 
     // Server-side filtering
     const hasFilters = colors || sizes || materials || minPrice || maxPrice;
-    
+
     if (hasFilters) {
       const andConditions: any[] = [];
-      
+
       if (colors) {
         const array = colors.replace(/\+/g, ' ').split(',').map(s => s.trim());
         andConditions.push({ OR: array.map(val => ({ colour: { equals: val, mode: 'insensitive' as const } })) });
@@ -541,7 +519,7 @@ export class AwinController {
         if (maxPrice) priceCond.lte = parseFloat(maxPrice);
         andConditions.push({ price: priceCond });
       }
-      
+
       if (andConditions.length > 0) {
         where.AND = andConditions;
       }
@@ -552,7 +530,7 @@ export class AwinController {
         where,
         select: { id: true, merchant: true },
         orderBy: { createdAt: 'desc' },
-        take: 2000,
+        take: Math.min(2000, Math.max(200, skip + l)),
       }),
       (this.prisma.product as any).count({ where }),
     ]);
@@ -594,37 +572,37 @@ export class AwinController {
     // Skip fallback if filters are present so we don't return unrelated products!
     if (total === 0 && category && category !== 'all-products' && !hasFilters) {
       console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
-      
+
       const { data: allCats, categoryMap } = await this.categoryService.getCategoryStructure();
       if (allCats && categoryMap) {
         const target = allCats.find(c => c.slug.toLowerCase() === category.toLowerCase());
         if (target && target.parentId) {
           const parent = categoryMap.get(target.parentId);
           if (parent) {
-             console.log(`[getAllProducts] Falling back to parent category: ${parent.name}`);
-             // Re-run search for parent
-             const [fallbackData, fallbackTotal] = await Promise.all([
-               (this.prisma.product as any).findMany({
-                 where: {
-                   OR: [
-                     { category: { contains: parent.name, mode: 'insensitive' } }
-                   ]
-                 },
-                 skip,
-                 take: l,
-                 orderBy: { createdAt: 'desc' },
-                 select: this.productListSelect,
-               }),
-               (this.prisma.product as any).count({
-                 where: {
-                   OR: [
-                     { internalCategoryId: parent.id },
-                     { category: { contains: parent.name, mode: 'insensitive' } }
-                   ]
-                 }
-               }),
-             ]);
-             return { data: fallbackData, total: fallbackTotal, page: p, totalPages: Math.ceil(fallbackTotal / l) };
+            console.log(`[getAllProducts] Falling back to parent category: ${parent.name}`);
+            // Re-run search for parent
+            const [fallbackData, fallbackTotal] = await Promise.all([
+              (this.prisma.product as any).findMany({
+                where: {
+                  OR: [
+                    { category: { contains: parent.name, mode: 'insensitive' } }
+                  ]
+                },
+                skip,
+                take: l,
+                orderBy: { createdAt: 'desc' },
+                select: this.productListSelect,
+              }),
+              (this.prisma.product as any).count({
+                where: {
+                  OR: [
+                    { internalCategoryId: parent.id },
+                    { category: { contains: parent.name, mode: 'insensitive' } }
+                  ]
+                }
+              }),
+            ]);
+            return { data: fallbackData, total: fallbackTotal, page: p, totalPages: Math.ceil(fallbackTotal / l) };
           }
         }
       }
@@ -635,8 +613,7 @@ export class AwinController {
         const fallbackWhere: any = {
           OR: words.flatMap(word => [
             { category: { contains: word, mode: 'insensitive' } },
-            { merchantCategory: { contains: word, mode: 'insensitive' } },
-            { merchantProductCategoryPath: { contains: word, mode: 'insensitive' } }
+            { merchantCategory: { contains: word, mode: 'insensitive' } }
           ])
         };
 
@@ -675,12 +652,12 @@ export class AwinController {
       const oldestKey = this.productsCache.keys().next().value;
       if (oldestKey) this.productsCache.delete(oldestKey);
     }
-    
+
     this.productsCache.set(cacheKey, { data: result, timestamp: now });
-    
+
     // Clear cache if requested (or on every request for debugging - but let's just use a short TTL)
     // this.productsCache.clear(); 
-    
+
     // Periodically cleanup expired entries (roughly 1 in 10 requests)
     if (Math.random() < 0.1) {
       for (const [key, value] of this.productsCache.entries()) {
@@ -689,10 +666,10 @@ export class AwinController {
         }
       }
     }
-    
+
     return result;
   }
-  
+
   @Get('merchants')
   @ApiOperation({ summary: 'Get all unique merchants from products' })
   async getMerchants() {
@@ -742,7 +719,7 @@ export class AwinController {
     });
 
     const memo = new Map<string, number>();
-    
+
     // 3. Pre-calculate deep counts iteratively (bottom-up is better, but this single-pass recursive with memo is okay)
     // Actually, let's do a proper iterative pre-calculation for maximum speed
     const calculateAllCounts = () => {
@@ -763,10 +740,10 @@ export class AwinController {
 
       const cat = categoryMap.get(catId);
       if (!cat) return 0;
-      
+
       const children = childrenMap.get(catId) || [];
       let total = 0;
-      
+
       if (children.length > 0) {
         // Parent Count = SUM of children only
         children.forEach((child: any) => {
@@ -849,15 +826,7 @@ export class AwinController {
           productId ? { id: productId } : undefined,
         ].filter(Boolean)
       },
-      include: {
-        colorVariants: true,
-        attributes: {
-          include: {
-            attribute: true,
-            attributeValue: true
-          }
-        }
-      }
+
     });
     return this.enhanceProductImages(product);
   }
@@ -866,17 +835,9 @@ export class AwinController {
   @ApiOperation({ summary: 'Get a product by ID' })
   @ApiResponse({ status: 200, description: 'Return the product.' })
   async getProductById(@Param('id') id: string) {
-    const product = await (this.prisma.product as any).findUnique({ 
+    const product = await (this.prisma.product as any).findUnique({
       where: { id },
-      include: {
-        colorVariants: true,
-        attributes: {
-          include: {
-            attribute: true,
-            attributeValue: true
-          }
-        }
-      }
+
     });
     return this.enhanceProductImages(product);
   }

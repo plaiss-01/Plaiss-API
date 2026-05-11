@@ -1,0 +1,156 @@
+import { OnModuleInit } from '@nestjs/common';
+import { PrismaService } from '../prisma.service';
+import { RegisterIndividualDto } from './dto/register-individual.dto';
+export declare class UsersService implements OnModuleInit {
+    private readonly prisma;
+    constructor(prisma: PrismaService);
+    onModuleInit(): Promise<void>;
+    createSuperAdmin(): Promise<void>;
+    registerIndividual(dto: RegisterIndividualDto): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    registerDesigner(dto: any): Promise<{
+        portfolio: {
+            id: string;
+            createdAt: Date;
+            title: string | null;
+            url: string;
+            userId: string;
+        }[];
+    } & {
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    getAllUsers(): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }[]>;
+    getDesigners(): Promise<any>;
+    getDesignerById(id: string): Promise<({
+        portfolio: {
+            id: string;
+            createdAt: Date;
+            title: string | null;
+            url: string;
+            userId: string;
+        }[];
+    } & {
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }) | null>;
+    getUserById(id: string): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    } | null>;
+    updateUser(id: string, data: any): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    deleteUser(id: string): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    login(dto: any): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        type: string;
+        email: string;
+        password: string | null;
+        address: string | null;
+        phone: string | null;
+        googleId: string | null;
+        appleId: string | null;
+        role: string;
+        isApproved: boolean;
+        isDesigner: boolean;
+        updatedAt: Date;
+    }>;
+    approveDesigner(id: string, isApproved: boolean): Promise<any>;
+    getPendingDesigners(): Promise<any>;
+}
