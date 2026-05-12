@@ -442,7 +442,6 @@ let AwinController = class AwinController {
                 where,
                 select: { id: true, merchant: true },
                 orderBy: { createdAt: 'desc' },
-                take: Math.min(2000, Math.max(200, skip + l)),
             }),
             this.prisma.product.count({ where }),
         ]);
