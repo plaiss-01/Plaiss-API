@@ -809,7 +809,7 @@ let AwinService = AwinService_1 = class AwinService {
             'productType',
             'merchant_product_category_path',
         ]);
-        if (!/sofa|couch|settee/.test(sofaText) ||
+        if (!/sofa|couch|settee|chair|light|decor|plant|rug|kitchen/.test(sofaText) ||
             !awProductId ||
             !productName ||
             !price ||
@@ -818,9 +818,9 @@ let AwinService = AwinService_1 = class AwinService {
             categoryName === 'collection') {
             return null;
         }
-        const productModelClean = this.inferAwinProductModel(row, getVal);
-        const colourClean = this.inferAwinColour(row, getVal);
-        const sizeStockStatusClean = this.inferAwinSizeStockStatus(row, getVal);
+        const productModelClean = this.inferAwinProductModel(row, getVal, categoryName);
+        const colourClean = this.inferAwinColour(row, getVal, categoryName);
+        const sizeStockStatusClean = this.inferAwinSizeStockStatus(row, getVal, categoryName);
         const originalPriceClean = this.parseAwinPrice(this.getFirstAwinValue(row, ['rrp_price', 'rrp', 'was_price', 'wasPrice', 'base_price', 'basePrice']));
         const discountedPriceClean = this.parseAwinPrice(this.getFirstAwinValue(row, ['display_price', 'displayPrice', 'search_price', 'store_price', 'price']));
         const saving = originalPriceClean !== null && discountedPriceClean !== null && originalPriceClean - discountedPriceClean >= 5
@@ -910,7 +910,7 @@ let AwinService = AwinService_1 = class AwinService {
         const insertBatchSize = 1000;
         const fields = [
             'id', 'name', 'slug', 'description', 'price', 'currency', 'imageUrl', 'productUrl',
-            'merchant', 'category', 'internalCategoryId', 'merchantProductId',
+            'merchant', 'category', 'merchantProductId',
             'merchantCategory', 'categoryId', 'brandName', 'colour', 'productModel',
             'productType', 'sizeStockStatus', 'saving', 'basePrice', 'displayPrice', 'awinId'
         ];
@@ -936,7 +936,6 @@ let AwinService = AwinService_1 = class AwinService {
                     productUrl: row.product_url,
                     merchant: row.merchant_name,
                     category: catRec?.name || row.category_name,
-                    internalCategoryId: catRec?.id || null,
                     merchantProductId: row.merchant_product_id,
                     merchantCategory: row.merchant_category,
                     categoryId: row.category_id,
@@ -966,7 +965,7 @@ let AwinService = AwinService_1 = class AwinService {
             const query = `
         INSERT INTO "Product" (
           id, name, slug, description, price, currency, "imageUrl", "productUrl",
-          merchant, category, "internalCategoryId", "merchantProductId",
+          merchant, category, "merchantProductId",
           "merchantCategory", "categoryId", "brandName", colour, "productModel",
           "productType", "sizeStockStatus", saving, "basePrice", "displayPrice", "awinId", "updatedAt"
         )
@@ -981,7 +980,6 @@ let AwinService = AwinService_1 = class AwinService {
           "productUrl" = EXCLUDED."productUrl",
           merchant = EXCLUDED.merchant,
           category = EXCLUDED.category,
-          "internalCategoryId" = EXCLUDED."internalCategoryId",
           "merchantProductId" = EXCLUDED."merchantProductId",
           "merchantCategory" = EXCLUDED."merchantCategory",
           "categoryId" = EXCLUDED."categoryId",
@@ -1026,7 +1024,11 @@ let AwinService = AwinService_1 = class AwinService {
             .join(' ')
             .trim();
     }
-    inferAwinProductModel(row, getVal) {
+    inferAwinProductModel(row, getVal, categoryName) {
+        const cat = categoryName.toLowerCase();
+        if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+            return 'Standard';
+        }
         const fields = [
             'merchant_deep_link',
             'merchantDeepLink',
@@ -1063,7 +1065,7 @@ let AwinService = AwinService_1 = class AwinService {
         }
         return 'Unknown';
     }
-    inferAwinColour(row, getVal) {
+    inferAwinColour(row, getVal, categoryName) {
         const fields = [
             'merchant_deep_link',
             'merchantDeepLink',
@@ -1092,6 +1094,10 @@ let AwinService = AwinService_1 = class AwinService {
             if (detected !== 'Unknown')
                 return detected;
         }
+        const cat = categoryName.toLowerCase();
+        if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+            return 'N/A';
+        }
         return 'Unknown';
     }
     detectStandardColour(text) {
@@ -1106,7 +1112,11 @@ let AwinService = AwinService_1 = class AwinService {
         }
         return 'Unknown';
     }
-    inferAwinSizeStockStatus(row, getVal) {
+    inferAwinSizeStockStatus(row, getVal, categoryName) {
+        const cat = categoryName.toLowerCase();
+        if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+            return 'Standard';
+        }
         const existing = getVal(['size_stock_status', 'sizeStockStatus']);
         if (existing) {
             const existingClean = String(existing)
@@ -1297,12 +1307,10 @@ let AwinService = AwinService_1 = class AwinService {
         const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
         const categoryPath = rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']);
         let finalCategory = this.extractLeafCategory(categoryPath);
-        let internalCategoryId = null;
         if (finalCategory && finalCategory !== 'collection') {
             const catRec = await this.getOrCreateCategoryRecord(finalCategory);
             if (catRec) {
                 finalCategory = catRec.name;
-                internalCategoryId = catRec.id;
             }
         }
         const finalPrice = parseFloat(getVal(['search_price', 'price'])) || 0;
@@ -1324,7 +1332,6 @@ let AwinService = AwinService_1 = class AwinService {
         const productData = {
             name: productName,
             slug: this.slugify(productName, awProductId),
-            internalCategoryId,
             description: getVal(['description', 'product_description']),
             price: parseFloat(getVal(['search_price', 'price'])) || 0,
             currency: getVal(['currency']),
@@ -1491,12 +1498,10 @@ let AwinService = AwinService_1 = class AwinService {
             }
             const awinIdMatch = url.match(/[?&]aw_product_id=([^&]+)/) || url.match(/\/p\/([^/?]+)/);
             const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
-            let internalCategoryId = null;
             let finalCategoryName = safeCategory;
             if (safeCategory && safeCategory !== 'collection') {
                 const catRec = await this.getOrCreateCategoryRecord(safeCategory);
                 if (catRec) {
-                    internalCategoryId = catRec.id;
                     finalCategoryName = catRec.name;
                 }
             }
@@ -1511,7 +1516,6 @@ let AwinService = AwinService_1 = class AwinService {
                     imageUrl,
                     productUrl,
                     category: finalCategoryName,
-                    internalCategoryId,
                     merchant: this.extractMerchant(url),
                     merchantProductId: awinId,
                 },
@@ -1525,7 +1529,6 @@ let AwinService = AwinService_1 = class AwinService {
                     imageUrl,
                     productUrl,
                     category: finalCategoryName,
-                    internalCategoryId,
                     merchant: this.extractMerchant(url),
                     merchantProductId: awinId,
                 },

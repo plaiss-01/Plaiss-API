@@ -38,15 +38,8 @@ async function main() {
     ON CONFLICT DO NOTHING;
   `);
 
-  // Update Products with internalCategoryId
-  console.log('Linking Categories to Products...');
-  await prisma.$executeRawUnsafe(`
-    UPDATE "Product" p
-    SET "internalCategoryId" = c.id
-    FROM "Category" c
-    WHERE p."category" IS NOT NULL AND TRIM(LOWER(p."category")) = TRIM(LOWER(c."name"))
-    AND p."internalCategoryId" IS NULL;
-  `);
+  // Skipping linking Categories to Products via internalCategoryId as it doesn't exist in schema
+  console.log('Skipping linking Categories to Products via internalCategoryId...');
 
   const attributesMapping = [
     { name: 'Brand', column: '"brandName"' },

@@ -495,10 +495,7 @@ let AwinController = class AwinController {
                             }),
                             this.prisma.product.count({
                                 where: {
-                                    OR: [
-                                        { internalCategoryId: parent.id },
-                                        { category: { contains: parent.name, mode: 'insensitive' } }
-                                    ]
+                                    category: { contains: parent.name, mode: 'insensitive' }
                                 }
                             }),
                         ]);

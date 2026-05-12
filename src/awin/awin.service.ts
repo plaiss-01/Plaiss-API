@@ -944,7 +944,7 @@ export class AwinService {
     ]);
 
     if (
-      !/sofa|couch|settee/.test(sofaText) ||
+      !/sofa|couch|settee|chair|light|decor|plant|rug|kitchen/.test(sofaText) ||
       !awProductId ||
       !productName ||
       !price ||
@@ -955,9 +955,9 @@ export class AwinService {
       return null;
     }
 
-    const productModelClean = this.inferAwinProductModel(row, getVal);
-    const colourClean = this.inferAwinColour(row, getVal);
-    const sizeStockStatusClean = this.inferAwinSizeStockStatus(row, getVal);
+    const productModelClean = this.inferAwinProductModel(row, getVal, categoryName);
+    const colourClean = this.inferAwinColour(row, getVal, categoryName);
+    const sizeStockStatusClean = this.inferAwinSizeStockStatus(row, getVal, categoryName);
     const originalPriceClean = this.parseAwinPrice(
       this.getFirstAwinValue(row, ['rrp_price', 'rrp', 'was_price', 'wasPrice', 'base_price', 'basePrice']),
     );
@@ -1095,7 +1095,7 @@ export class AwinService {
     const insertBatchSize = 1000;
     const fields = [
       'id', 'name', 'slug', 'description', 'price', 'currency', 'imageUrl', 'productUrl',
-      'merchant', 'category', 'internalCategoryId', 'merchantProductId',
+      'merchant', 'category', 'merchantProductId',
       'merchantCategory', 'categoryId', 'brandName', 'colour', 'productModel',
       'productType', 'sizeStockStatus', 'saving', 'basePrice', 'displayPrice', 'awinId'
     ];
@@ -1124,7 +1124,6 @@ export class AwinService {
           productUrl: row.product_url,
           merchant: row.merchant_name,
           category: catRec?.name || row.category_name,
-          internalCategoryId: catRec?.id || null,
           merchantProductId: row.merchant_product_id,
           merchantCategory: row.merchant_category,
           categoryId: row.category_id,
@@ -1157,7 +1156,7 @@ export class AwinService {
       const query = `
         INSERT INTO "Product" (
           id, name, slug, description, price, currency, "imageUrl", "productUrl",
-          merchant, category, "internalCategoryId", "merchantProductId",
+          merchant, category, "merchantProductId",
           "merchantCategory", "categoryId", "brandName", colour, "productModel",
           "productType", "sizeStockStatus", saving, "basePrice", "displayPrice", "awinId", "updatedAt"
         )
@@ -1172,7 +1171,6 @@ export class AwinService {
           "productUrl" = EXCLUDED."productUrl",
           merchant = EXCLUDED.merchant,
           category = EXCLUDED.category,
-          "internalCategoryId" = EXCLUDED."internalCategoryId",
           "merchantProductId" = EXCLUDED."merchantProductId",
           "merchantCategory" = EXCLUDED."merchantCategory",
           "categoryId" = EXCLUDED."categoryId",
@@ -1232,7 +1230,11 @@ export class AwinService {
       .trim();
   }
 
-  private inferAwinProductModel(row: any, getVal: Function) {
+  private inferAwinProductModel(row: any, getVal: Function, categoryName: string) {
+    const cat = categoryName.toLowerCase();
+    if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+      return 'Standard';
+    }
     const fields = [
       'merchant_deep_link',
       'merchantDeepLink',
@@ -1270,7 +1272,7 @@ export class AwinService {
     return 'Unknown';
   }
 
-  private inferAwinColour(row: any, getVal: Function) {
+  private inferAwinColour(row: any, getVal: Function, categoryName: string) {
     const fields = [
       'merchant_deep_link',
       'merchantDeepLink',
@@ -1300,6 +1302,11 @@ export class AwinService {
       if (detected !== 'Unknown') return detected;
     }
 
+    const cat = categoryName.toLowerCase();
+    if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+      return 'N/A';
+    }
+
     return 'Unknown';
   }
 
@@ -1317,7 +1324,11 @@ export class AwinService {
     return 'Unknown';
   }
 
-  private inferAwinSizeStockStatus(row: any, getVal: Function) {
+  private inferAwinSizeStockStatus(row: any, getVal: Function, categoryName: string) {
+    const cat = categoryName.toLowerCase();
+    if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+      return 'Standard';
+    }
     const existing = getVal(['size_stock_status', 'sizeStockStatus']);
     if (existing) {
       const existingClean = String(existing)
@@ -1530,12 +1541,10 @@ export class AwinService {
     let finalCategory = this.extractLeafCategory(categoryPath);
 
     // 1. Category Merging Logic: 
-    let internalCategoryId: string | null = null;
     if (finalCategory && finalCategory !== 'collection') {
       const catRec = await this.getOrCreateCategoryRecord(finalCategory);
       if (catRec) {
         finalCategory = catRec.name;
-        internalCategoryId = catRec.id;
       }
     }
     
@@ -1566,7 +1575,6 @@ export class AwinService {
     const productData: any = {
       name: productName,
       slug: this.slugify(productName, awProductId),
-      internalCategoryId,
       description: getVal(['description', 'product_description']),
       price: parseFloat(getVal(['search_price', 'price'])) || 0,
       currency: getVal(['currency']),
@@ -1772,12 +1780,10 @@ export class AwinService {
       const awinId = awinIdMatch ? awinIdMatch[1] : `manual-${Date.now()}`;
 
       // Auto-sync category
-      let internalCategoryId: string | null = null;
       let finalCategoryName = safeCategory;
       if (safeCategory && safeCategory !== 'collection') {
         const catRec = await this.getOrCreateCategoryRecord(safeCategory);
         if (catRec) {
-          internalCategoryId = catRec.id;
           finalCategoryName = catRec.name;
         }
       }
@@ -1793,7 +1799,6 @@ export class AwinService {
           imageUrl,
           productUrl,
           category: finalCategoryName,
-          internalCategoryId,
           merchant: this.extractMerchant(url),
           // New fields support for single product scraping
           merchantProductId: awinId, // Use awinId if specific merchant ID is not scraped
@@ -1808,7 +1813,6 @@ export class AwinService {
           imageUrl,
           productUrl,
           category: finalCategoryName,
-          internalCategoryId,
           merchant: this.extractMerchant(url),
           merchantProductId: awinId,
         },
