@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var AwinController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AwinController = void 0;
 const common_1 = require("@nestjs/common");
@@ -22,11 +23,12 @@ const create_product_dto_1 = require("./dto/create-product.dto");
 const update_product_dto_1 = require("./dto/update-product.dto");
 const import_status_service_1 = require("./import-status.service");
 const category_service_1 = require("../category/category.service");
-let AwinController = class AwinController {
+let AwinController = AwinController_1 = class AwinController {
     awinService;
     prisma;
     statusService;
     categoryService;
+    logger = new common_1.Logger(AwinController_1.name);
     constructor(awinService, prisma, statusService, categoryService) {
         this.awinService = awinService;
         this.prisma = prisma;
@@ -445,6 +447,9 @@ let AwinController = class AwinController {
             }),
             this.prisma.product.count({ where }),
         ]);
+        this.logger.log(`[getAllProducts] page: ${p}, limit: ${l}, category: ${category}, search: ${search}`);
+        this.logger.log(`[getAllProducts] where: ${JSON.stringify(where)}`);
+        this.logger.log(`[getAllProducts] idResults: ${idResults.length}, total: ${total}`);
         let data = [];
         if (idResults.length > 0) {
             const groups = new Map();
@@ -465,11 +470,24 @@ let AwinController = class AwinController {
             }
             const skip = (p - 1) * l;
             const pageIds = interleavedIds.slice(skip, skip + l);
-            const fetchedProducts = await this.prisma.product.findMany({
-                where: { id: { in: pageIds } },
-                select: this.productListSelect,
-            });
-            data = pageIds.map(id => fetchedProducts.find((prod) => prod.id === id)).filter(Boolean);
+            if (pageIds.length === 0 && total > skip) {
+                this.logger.warn(`[getAllProducts] pageIds is empty but total is ${total} and skip is ${skip}. Falling back to standard pagination.`);
+                const fetchedProducts = await this.prisma.product.findMany({
+                    where,
+                    orderBy: { createdAt: 'desc' },
+                    skip,
+                    take: l,
+                    select: this.productListSelect,
+                });
+                data = fetchedProducts;
+            }
+            else {
+                const fetchedProducts = await this.prisma.product.findMany({
+                    where: { id: { in: pageIds } },
+                    select: this.productListSelect,
+                });
+                data = pageIds.map(id => fetchedProducts.find((prod) => prod.id === id)).filter(Boolean);
+            }
         }
         if (total === 0 && category && category !== 'all-products' && !hasFilters) {
             console.log(`[getAllProducts] No products found for "${category}". Trying parent fallback...`);
@@ -688,15 +706,24 @@ let AwinController = class AwinController {
         });
     }
     async deleteProduct(id) {
+        await this.prisma.productColorVariant.deleteMany({ where: { productId: id } });
         const result = await this.prisma.product.delete({ where: { id } });
         this.productsCache.clear();
         return result;
     }
     async deleteProductsByMerchant(merchantName) {
+        const products = await this.prisma.product.findMany({
+            where: { merchant: { equals: merchantName, mode: 'insensitive' } },
+            select: { id: true }
+        });
+        const productIds = products.map(p => p.id);
+        if (productIds.length > 0) {
+            await this.prisma.productColorVariant.deleteMany({
+                where: { productId: { in: productIds } }
+            });
+        }
         const result = await this.prisma.product.deleteMany({
-            where: {
-                merchant: { equals: merchantName, mode: 'insensitive' }
-            }
+            where: { id: { in: productIds } }
         });
         this.productsCache.clear();
         return result;
@@ -886,7 +913,7 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "deduplicate", null);
-exports.AwinController = AwinController = __decorate([
+exports.AwinController = AwinController = AwinController_1 = __decorate([
     (0, swagger_1.ApiTags)('awin'),
     (0, common_1.Controller)('awin'),
     __metadata("design:paramtypes", [awin_service_1.AwinService,

@@ -1,5 +1,5 @@
 // Triggering reload after prisma generate
-import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile, Logger } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AwinService } from './awin.service';
@@ -12,6 +12,8 @@ import { CategoryService } from '../category/category.service';
 @ApiTags('awin')
 @Controller('awin')
 export class AwinController {
+  private readonly logger = new Logger(AwinController.name);
+
   constructor(
     private readonly awinService: AwinService,
     private readonly prisma: PrismaService,
@@ -551,6 +553,10 @@ export class AwinController {
       (this.prisma.product as any).count({ where }),
     ]);
 
+    this.logger.log(`[getAllProducts] page: ${p}, limit: ${l}, category: ${category}, search: ${search}`);
+    this.logger.log(`[getAllProducts] where: ${JSON.stringify(where)}`);
+    this.logger.log(`[getAllProducts] idResults: ${idResults.length}, total: ${total}`);
+
     let data: any[] = [];
     if (idResults.length > 0) {
       const groups = new Map<string, string[]>();
@@ -574,13 +580,25 @@ export class AwinController {
       const skip = (p - 1) * l;
       const pageIds = interleavedIds.slice(skip, skip + l);
 
-      const fetchedProducts = await (this.prisma.product as any).findMany({
-        where: { id: { in: pageIds } },
-        select: this.productListSelect,
-      });
+      if (pageIds.length === 0 && total > skip) {
+        this.logger.warn(`[getAllProducts] pageIds is empty but total is ${total} and skip is ${skip}. Falling back to standard pagination.`);
+        const fetchedProducts = await (this.prisma.product as any).findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: l,
+          select: this.productListSelect,
+        });
+        data = fetchedProducts;
+      } else {
+        const fetchedProducts = await (this.prisma.product as any).findMany({
+          where: { id: { in: pageIds } },
+          select: this.productListSelect,
+        });
 
-      // Sort back to match interleaved order
-      data = pageIds.map(id => fetchedProducts.find((prod: any) => prod.id === id)).filter(Boolean);
+        // Sort back to match interleaved order
+        data = pageIds.map(id => fetchedProducts.find((prod: any) => prod.id === id)).filter(Boolean);
+      }
     }
 
     // FALLBACK: If 0 products found for the specific category/hierarchy,
@@ -869,6 +887,7 @@ export class AwinController {
   @ApiOperation({ summary: 'Delete a product' })
   @ApiResponse({ status: 200, description: 'The product has been successfully deleted.' })
   async deleteProduct(@Param('id') id: string) {
+    await this.prisma.productColorVariant.deleteMany({ where: { productId: id } });
     const result = await this.prisma.product.delete({ where: { id } });
     this.productsCache.clear(); // Clear cache to reflect deletion
     return result;
@@ -878,11 +897,22 @@ export class AwinController {
   @ApiOperation({ summary: 'Delete all products from a specific merchant (Hard Delete)' })
   @ApiResponse({ status: 200, description: 'All products from the merchant have been permanently removed.' })
   async deleteProductsByMerchant(@Param('merchantName') merchantName: string) {
-    const result = await this.prisma.product.deleteMany({
-      where: {
-        merchant: { equals: merchantName, mode: 'insensitive' }
-      }
+    const products = await this.prisma.product.findMany({
+      where: { merchant: { equals: merchantName, mode: 'insensitive' } },
+      select: { id: true }
     });
+    const productIds = products.map(p => p.id);
+
+    if (productIds.length > 0) {
+      await this.prisma.productColorVariant.deleteMany({
+        where: { productId: { in: productIds } }
+      });
+    }
+
+    const result = await this.prisma.product.deleteMany({
+      where: { id: { in: productIds } }
+    });
+    
     this.productsCache.clear(); // Clear cache to reflect deletions
     return result;
   }

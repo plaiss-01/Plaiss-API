@@ -9,6 +9,7 @@ export declare class AwinController {
     private readonly prisma;
     private readonly statusService;
     private readonly categoryService;
+    private readonly logger;
     constructor(awinService: AwinService, prisma: PrismaService, statusService: ImportStatusService, categoryService: CategoryService);
     private productsCache;
     private readonly CACHE_TTL;
