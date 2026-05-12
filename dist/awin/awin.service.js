@@ -53,6 +53,8 @@ const csv = __importStar(require("fast-csv"));
 const zlib = __importStar(require("zlib"));
 const stream_1 = require("stream");
 const crypto_1 = require("crypto");
+const http = __importStar(require("http"));
+const https = __importStar(require("https"));
 const import_status_service_1 = require("./import-status.service");
 const category_service_1 = require("../category/category.service");
 let AwinService = AwinService_1 = class AwinService {
@@ -382,6 +384,12 @@ let AwinService = AwinService_1 = class AwinService {
     }
     async extractAwinFeedToRaw(url, jobId, replace = true) {
         await this.ensureAwinPipelineTables();
+        let startRow = 0;
+        if (!replace && jobId) {
+            const [{ max }] = await this.prisma.$queryRawUnsafe(`SELECT MAX(row_number) as max FROM "${this.awinPipelineTables.raw}" WHERE import_job_id = $1`, jobId);
+            startRow = Number(max) || 0;
+            this.logger.log(`Resuming from row ${startRow} for job ${jobId}`);
+        }
         if (replace) {
             await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
         }
@@ -389,6 +397,9 @@ let AwinService = AwinService_1 = class AwinService {
         this.logger.log(`Extracting AWIN feed to RAW table: ${feedUrl}`);
         const response = await (0, rxjs_1.firstValueFrom)(this.httpService.get(feedUrl, {
             responseType: 'stream',
+            timeout: 300000,
+            httpAgent: new http.Agent({ keepAlive: true }),
+            httpsAgent: new https.Agent({ keepAlive: true }),
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             },
@@ -399,10 +410,16 @@ let AwinService = AwinService_1 = class AwinService {
             feedUrl.endsWith('.gz');
         const parserStream = isGzip ? stream.pipe(zlib.createGunzip()) : stream;
         const parser = parserStream.pipe(csv.parse({ headers: true }));
+        parser.on('error', (err) => {
+            this.logger.error(`Stream error at row ${count}: ${err.message}`);
+        });
         let count = 0;
         let batch = [];
         for await (const row of parser) {
             count++;
+            if (count <= startRow) {
+                continue;
+            }
             batch.push({ row, rowNumber: count });
             if (batch.length >= this.rawInsertBatchSize) {
                 await this.insertRawAwinRows(batch, feedUrl, jobId);

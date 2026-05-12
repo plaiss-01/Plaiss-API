@@ -7,6 +7,8 @@ import * as csv from 'fast-csv';
 import * as zlib from 'zlib';
 import { Readable } from 'stream';
 import { randomUUID } from 'crypto';
+import * as http from 'http';
+import * as https from 'https';
 
 import { ImportStatusService } from './import-status.service';
 import { CategoryService } from '../category/category.service';
@@ -371,6 +373,16 @@ export class AwinService {
   async extractAwinFeedToRaw(url: string, jobId?: string, replace = true) {
     await this.ensureAwinPipelineTables();
 
+    let startRow = 0;
+    if (!replace && jobId) {
+      const [{ max }] = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT MAX(row_number) as max FROM "${this.awinPipelineTables.raw}" WHERE import_job_id = $1`,
+        jobId,
+      );
+      startRow = Number(max) || 0;
+      this.logger.log(`Resuming from row ${startRow} for job ${jobId}`);
+    }
+
     if (replace) {
       await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
     }
@@ -381,6 +393,9 @@ export class AwinService {
     const response = await firstValueFrom(
       this.httpService.get(feedUrl, {
         responseType: 'stream',
+        timeout: 300000,  // 5 min timeout
+        httpAgent: new http.Agent({ keepAlive: true }),
+        httpsAgent: new https.Agent({ keepAlive: true }),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
@@ -395,10 +410,19 @@ export class AwinService {
     const parserStream = isGzip ? stream.pipe(zlib.createGunzip()) : stream;
     const parser = parserStream.pipe(csv.parse({ headers: true }));
 
+    parser.on('error', (err) => {
+      this.logger.error(`Stream error at row ${count}: ${err.message}`);
+    });
+
     let count = 0;
     let batch: Array<{ row: any; rowNumber: number }> = [];
     for await (const row of parser) {
       count++;
+      
+      if (count <= startRow) {
+        continue;
+      }
+
       batch.push({ row, rowNumber: count });
 
       if (batch.length >= this.rawInsertBatchSize) {
