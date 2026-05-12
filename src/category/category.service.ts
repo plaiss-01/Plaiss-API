@@ -136,13 +136,16 @@ export class CategoryService {
   async update(id: string, data: any) {
     const updateData: any = {};
     
+    const currentCategory = await this.prisma.category.findUnique({ where: { id } });
+    if (!currentCategory) throw new NotFoundException('Category not found');
+    
     if (data.name) {
       updateData.name = data.name;
       updateData.slug = this.slugify(data.name);
       
       // Also update products if needed
       await this.prisma.product.updateMany({
-        where: { category: { equals: id, mode: 'insensitive' } },
+        where: { category: { equals: currentCategory.name, mode: 'insensitive' } },
         data: { category: data.name },
       });
     }
@@ -165,12 +168,22 @@ export class CategoryService {
   }
 
   async remove(id: string) {
+    const currentCategory = await this.prisma.category.findUnique({ where: { id } });
+    
+    if (currentCategory) {
+      // Unlink products from this category to avoid relation violation
+      await this.prisma.product.updateMany({
+        where: { category: { equals: currentCategory.name, mode: 'insensitive' } },
+        data: { category: null },
+      });
+    }
+ 
     // First, set parentId to null for any children to avoid breaking relations
     await this.prisma.category.updateMany({
       where: { parentId: id },
       data: { parentId: null },
     });
-
+ 
     const deleted = await this.prisma.category.delete({
       where: { id },
     });

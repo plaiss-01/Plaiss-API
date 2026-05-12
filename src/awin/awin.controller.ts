@@ -361,13 +361,13 @@ export class AwinController {
     ]);
 
     // For prices, we can just do a simple findMany and calculate or use aggregate if available
-    const productsForPrice = await (this.prisma.product as any).findMany({
+    const priceAgg = await (this.prisma.product as any).aggregate({
       where,
-      select: { discountedPriceClean: true },
-      take: 1000, // Limit for price calculation speed
+      _min: { discountedPriceClean: true },
+      _max: { discountedPriceClean: true },
     });
-
-    const prices = productsForPrice.map((p: any) => p.discountedPriceClean).filter(Boolean);
+ 
+    const prices = [priceAgg._min.discountedPriceClean, priceAgg._max.discountedPriceClean].filter(Boolean);
 
     return {
       sizes: sizes.map((s: any) => s.sizeStockStatusClean).filter(Boolean),
@@ -407,7 +407,10 @@ export class AwinController {
       }
     }
 
-    const where: any = {};
+    const where: any = {
+      imageUrl: { not: null },
+      NOT: { imageUrl: '' },
+    };
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },

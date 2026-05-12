@@ -308,12 +308,12 @@ let AwinController = AwinController_1 = class AwinController {
                 select: { productModelClean: true },
             }),
         ]);
-        const productsForPrice = await this.prisma.product.findMany({
+        const priceAgg = await this.prisma.product.aggregate({
             where,
-            select: { discountedPriceClean: true },
-            take: 1000,
+            _min: { discountedPriceClean: true },
+            _max: { discountedPriceClean: true },
         });
-        const prices = productsForPrice.map((p) => p.discountedPriceClean).filter(Boolean);
+        const prices = [priceAgg._min.discountedPriceClean, priceAgg._max.discountedPriceClean].filter(Boolean);
         return {
             sizes: sizes.map((s) => s.sizeStockStatusClean).filter(Boolean),
             colors: colors.map((c) => c.colourClean).filter(Boolean),
@@ -336,7 +336,10 @@ let AwinController = AwinController_1 = class AwinController {
                 return cached.data;
             }
         }
-        const where = {};
+        const where = {
+            imageUrl: { not: null },
+            NOT: { imageUrl: '' },
+        };
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },

@@ -129,11 +129,14 @@ let CategoryService = class CategoryService {
     }
     async update(id, data) {
         const updateData = {};
+        const currentCategory = await this.prisma.category.findUnique({ where: { id } });
+        if (!currentCategory)
+            throw new common_1.NotFoundException('Category not found');
         if (data.name) {
             updateData.name = data.name;
             updateData.slug = this.slugify(data.name);
             await this.prisma.product.updateMany({
-                where: { category: { equals: id, mode: 'insensitive' } },
+                where: { category: { equals: currentCategory.name, mode: 'insensitive' } },
                 data: { category: data.name },
             });
         }
@@ -151,6 +154,13 @@ let CategoryService = class CategoryService {
         return { ...updated, success: true };
     }
     async remove(id) {
+        const currentCategory = await this.prisma.category.findUnique({ where: { id } });
+        if (currentCategory) {
+            await this.prisma.product.updateMany({
+                where: { category: { equals: currentCategory.name, mode: 'insensitive' } },
+                data: { category: null },
+            });
+        }
         await this.prisma.category.updateMany({
             where: { parentId: id },
             data: { parentId: null },
