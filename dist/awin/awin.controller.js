@@ -184,6 +184,9 @@ let AwinController = AwinController_1 = class AwinController {
         return this.awinService.getAwinPipelineTableSummary();
     }
     async extractRaw(body) {
+        if (!body || !body.url) {
+            throw new common_1.BadRequestException('URL is required');
+        }
         const jobId = `awin-raw-${Date.now()}`;
         this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN RAW extraction...');
         this.awinService.extractAwinFeedToRaw(body.url, jobId, body.replace !== false).catch((e) => {
@@ -196,6 +199,9 @@ let AwinController = AwinController_1 = class AwinController {
         };
     }
     async uploadRawCsv(file, body) {
+        if (!file) {
+            throw new common_1.BadRequestException('File is required');
+        }
         const jobId = `awin-raw-csv-${Date.now()}`;
         this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN CSV RAW extraction...');
         this.awinService.extractCsvFileToRaw(file.buffer, jobId, body.replace !== 'false').catch((e) => {
@@ -241,6 +247,9 @@ let AwinController = AwinController_1 = class AwinController {
         return this.awinService.addProductFromUrl(createProductDto.url);
     }
     async uploadCsv(file) {
+        if (!file) {
+            throw new common_1.BadRequestException('File is required');
+        }
         const jobId = `csv-${Date.now()}`;
         this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting CSV file import...');
         this.awinService.processCsvFile(file.buffer, jobId).catch(e => {

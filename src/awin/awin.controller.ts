@@ -1,5 +1,5 @@
 // Triggering reload after prisma generate
-import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile, Logger } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile, Logger, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AwinService } from './awin.service';
@@ -180,6 +180,9 @@ export class AwinController {
   @Post('pipeline/extract-raw')
   @ApiOperation({ summary: 'Step 1: Extract AWIN data into AWIN_AFFILIAT_PRODUCTS_DATA_RAW' })
   async extractRaw(@Body() body: { url: string; replace?: boolean }) {
+    if (!body || !body.url) {
+      throw new BadRequestException('URL is required');
+    }
     const jobId = `awin-raw-${Date.now()}`;
     this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN RAW extraction...');
 
@@ -201,6 +204,9 @@ export class AwinController {
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { replace?: string },
   ) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
     const jobId = `awin-raw-csv-${Date.now()}`;
     this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting AWIN CSV RAW extraction...');
 
@@ -270,6 +276,9 @@ export class AwinController {
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload a CSV file of products' })
   async uploadCsv(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
     const jobId = `csv-${Date.now()}`;
     this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting CSV file import...');
 
