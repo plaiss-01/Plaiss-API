@@ -331,13 +331,13 @@ let AwinController = AwinController_1 = class AwinController {
             priceMax: prices.length ? Math.max(...prices) : 0,
         };
     }
-    async getAllProducts(page = '1', limit = '50', category, subs, search, colors, sizes, materials, minPrice, maxPrice) {
+    async getAllProducts(page = '1', limit = '50', category, subs, search, colors, sizes, materials, merchants, types, minPrice, maxPrice) {
         const p = parseInt(page, 10) || 1;
         let l = parseInt(limit, 10) || 50;
         if (l > 1000)
             l = 1000;
         const skip = (p - 1) * l;
-        const cacheKey = `products-${p}-${l}-${category || 'all'}-${subs || 'none'}-${search || 'none'}`;
+        const cacheKey = `products-${p}-${l}-${category || 'all'}-${subs || 'none'}-${search || 'none'}-${colors || 'none'}-${sizes || 'none'}-${materials || 'none'}-${merchants || 'none'}-${types || 'none'}-${minPrice || 'none'}-${maxPrice || 'none'}`;
         const now = Date.now();
         if (this.productsCache.has(cacheKey)) {
             const cached = this.productsCache.get(cacheKey);
@@ -424,7 +424,7 @@ let AwinController = AwinController_1 = class AwinController {
                 ...keywordConditions,
             ];
         }
-        const hasFilters = colors || sizes || materials || minPrice || maxPrice;
+        const hasFilters = colors || sizes || materials || merchants || types || minPrice || maxPrice;
         if (hasFilters) {
             const andConditions = [];
             if (colors) {
@@ -438,6 +438,14 @@ let AwinController = AwinController_1 = class AwinController {
             if (materials) {
                 const array = materials.replace(/\+/g, ' ').split(',').map(s => s.trim());
                 andConditions.push({ OR: array.map(val => ({ productModelClean: { contains: val, mode: 'insensitive' } })) });
+            }
+            if (merchants) {
+                const array = merchants.replace(/\+/g, ' ').split(',').map(s => s.trim());
+                andConditions.push({ OR: array.map(val => ({ merchant: { equals: val, mode: 'insensitive' } })) });
+            }
+            if (types) {
+                const array = types.replace(/\+/g, ' ').split(',').map(s => s.trim());
+                andConditions.push({ OR: array.map(val => ({ productType: { equals: val, mode: 'insensitive' } })) });
             }
             if (minPrice || maxPrice) {
                 const priceCond = {};
@@ -844,10 +852,12 @@ __decorate([
     __param(5, (0, common_1.Query)('colors')),
     __param(6, (0, common_1.Query)('sizes')),
     __param(7, (0, common_1.Query)('materials')),
-    __param(8, (0, common_1.Query)('minPrice')),
-    __param(9, (0, common_1.Query)('maxPrice')),
+    __param(8, (0, common_1.Query)('merchants')),
+    __param(9, (0, common_1.Query)('types')),
+    __param(10, (0, common_1.Query)('minPrice')),
+    __param(11, (0, common_1.Query)('maxPrice')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "getAllProducts", null);
 __decorate([

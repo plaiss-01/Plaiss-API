@@ -399,6 +399,8 @@ export class AwinController {
     @Query('colors') colors?: string,
     @Query('sizes') sizes?: string,
     @Query('materials') materials?: string,
+    @Query('merchants') merchants?: string,
+    @Query('types') types?: string,
     @Query('minPrice') minPrice?: string,
     @Query('maxPrice') maxPrice?: string,
   ) {
@@ -407,7 +409,7 @@ export class AwinController {
     if (l > 1000) l = 1000; // Cap limit to prevent memory issues
     const skip = (p - 1) * l;
 
-    const cacheKey = `products-${p}-${l}-${category || 'all'}-${subs || 'none'}-${search || 'none'}`;
+    const cacheKey = `products-${p}-${l}-${category || 'all'}-${subs || 'none'}-${search || 'none'}-${colors || 'none'}-${sizes || 'none'}-${materials || 'none'}-${merchants || 'none'}-${types || 'none'}-${minPrice || 'none'}-${maxPrice || 'none'}`;
     const now = Date.now();
     if (this.productsCache.has(cacheKey)) {
       const cached = this.productsCache.get(cacheKey)!;
@@ -527,7 +529,7 @@ export class AwinController {
     }
 
     // Server-side filtering
-    const hasFilters = colors || sizes || materials || minPrice || maxPrice;
+    const hasFilters = colors || sizes || materials || merchants || types || minPrice || maxPrice;
 
     if (hasFilters) {
       const andConditions: any[] = [];
@@ -543,6 +545,14 @@ export class AwinController {
       if (materials) {
         const array = materials.replace(/\+/g, ' ').split(',').map(s => s.trim());
         andConditions.push({ OR: array.map(val => ({ productModelClean: { contains: val, mode: 'insensitive' as const } })) });
+      }
+      if (merchants) {
+        const array = merchants.replace(/\+/g, ' ').split(',').map(s => s.trim());
+        andConditions.push({ OR: array.map(val => ({ merchant: { equals: val, mode: 'insensitive' as const } })) });
+      }
+      if (types) {
+        const array = types.replace(/\+/g, ' ').split(',').map(s => s.trim());
+        andConditions.push({ OR: array.map(val => ({ productType: { equals: val, mode: 'insensitive' as const } })) });
       }
       if (minPrice || maxPrice) {
         const priceCond: any = {};

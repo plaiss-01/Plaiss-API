@@ -85,13 +85,15 @@ export declare class AwinController {
         priceMin: number;
         priceMax: number;
     }>;
-    getAllProducts(page?: string, limit?: string, category?: string, subs?: string, search?: string, colors?: string, sizes?: string, materials?: string, minPrice?: string, maxPrice?: string): Promise<any>;
+    getAllProducts(page?: string, limit?: string, category?: string, subs?: string, search?: string, colors?: string, sizes?: string, materials?: string, merchants?: string, types?: string, minPrice?: string, maxPrice?: string): Promise<any>;
     getMerchants(): Promise<(string | null)[]>;
     getBrands(category?: string): Promise<(string | null)[]>;
     getCategories(): Promise<any[]>;
     getProductBySlug(slug: string): Promise<any>;
     getProductById(id: string): Promise<any>;
     updateProduct(id: string, updateProductDto: UpdateProductDto): Promise<{
+        category: string | null;
+        colour: string | null;
         id: string;
         name: string;
         slug: string | null;
@@ -100,19 +102,13 @@ export declare class AwinController {
         currency: string | null;
         imageUrl: string | null;
         productUrl: string | null;
-        merchant: string | null;
-        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         categoryId: string | null;
         brandName: string | null;
-        colour: string | null;
         productModel: string | null;
         productType: string | null;
         createdAt: Date | null;
-        productModelClean: string | null;
-        colourClean: string | null;
-        sizeStockStatusClean: string | null;
         isRecliner: string | null;
         isSofaBed: string | null;
         baseSku: string | null;
@@ -123,8 +119,14 @@ export declare class AwinController {
         rawRow: string | null;
         transformedAt: Date | null;
         salesDiscount: string | null;
+        merchant: string | null;
+        productModelClean: string | null;
+        colourClean: string | null;
+        sizeStockStatusClean: string | null;
     }>;
     deleteProduct(id: string): Promise<{
+        category: string | null;
+        colour: string | null;
         id: string;
         name: string;
         slug: string | null;
@@ -133,19 +135,13 @@ export declare class AwinController {
         currency: string | null;
         imageUrl: string | null;
         productUrl: string | null;
-        merchant: string | null;
-        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         categoryId: string | null;
         brandName: string | null;
-        colour: string | null;
         productModel: string | null;
         productType: string | null;
         createdAt: Date | null;
-        productModelClean: string | null;
-        colourClean: string | null;
-        sizeStockStatusClean: string | null;
         isRecliner: string | null;
         isSofaBed: string | null;
         baseSku: string | null;
@@ -156,6 +152,10 @@ export declare class AwinController {
         rawRow: string | null;
         transformedAt: Date | null;
         salesDiscount: string | null;
+        merchant: string | null;
+        productModelClean: string | null;
+        colourClean: string | null;
+        sizeStockStatusClean: string | null;
     }>;
     deleteProductsByMerchant(merchantName: string): Promise<import("@prisma/client").Prisma.BatchPayload>;
     deduplicate(): Promise<{
