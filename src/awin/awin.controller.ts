@@ -510,8 +510,16 @@ export class AwinController {
 
       where.OR = [
         { categoryId: { in: uniqueIds } },
-        { category: { in: uniqueNames, mode: 'insensitive' } },
-        { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
+        {
+          OR: uniqueNames.map((name) => ({
+            category: { contains: name, mode: 'insensitive' as const },
+          })),
+        },
+        {
+          OR: uniqueNames.map((name) => ({
+            merchantCategory: { contains: name, mode: 'insensitive' as const },
+          })),
+        },
       ];
     }
 
@@ -539,7 +547,12 @@ export class AwinController {
       }
       if (types) {
         const array = types.replace(/\+/g, ' ').split(',').map(s => s.trim());
-        andConditions.push({ OR: array.map(val => ({ productType: { equals: val, mode: 'insensitive' as const } })) });
+        andConditions.push({
+          OR: array.flatMap(val => [
+            { productType: { contains: val, mode: 'insensitive' as const } },
+            { category: { contains: val, mode: 'insensitive' as const } }
+          ])
+        });
       }
       if (minPrice || maxPrice) {
         const priceCond: any = {};

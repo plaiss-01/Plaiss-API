@@ -410,8 +410,16 @@ let AwinController = AwinController_1 = class AwinController {
             console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
             where.OR = [
                 { categoryId: { in: uniqueIds } },
-                { category: { in: uniqueNames, mode: 'insensitive' } },
-                { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
+                {
+                    OR: uniqueNames.map((name) => ({
+                        category: { contains: name, mode: 'insensitive' },
+                    })),
+                },
+                {
+                    OR: uniqueNames.map((name) => ({
+                        merchantCategory: { contains: name, mode: 'insensitive' },
+                    })),
+                },
             ];
         }
         const hasFilters = colors || sizes || materials || merchants || types || minPrice || maxPrice;
@@ -435,7 +443,12 @@ let AwinController = AwinController_1 = class AwinController {
             }
             if (types) {
                 const array = types.replace(/\+/g, ' ').split(',').map(s => s.trim());
-                andConditions.push({ OR: array.map(val => ({ productType: { equals: val, mode: 'insensitive' } })) });
+                andConditions.push({
+                    OR: array.flatMap(val => [
+                        { productType: { contains: val, mode: 'insensitive' } },
+                        { category: { contains: val, mode: 'insensitive' } }
+                    ])
+                });
             }
             if (minPrice || maxPrice) {
                 const priceCond = {};
