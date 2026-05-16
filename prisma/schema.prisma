@@ -48,6 +48,7 @@ model Product {
   saving               Float?
   
   // Missing columns from DB added:
+
   rawRow               String?   @map("raw_row")
   transformedAt        DateTime? @map("transformed_at")
   salesDiscount        String?   @map("sales_discount")

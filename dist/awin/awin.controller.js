@@ -408,20 +408,10 @@ let AwinController = AwinController_1 = class AwinController {
                 uniqueNames.push(category);
             }
             console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
-            const keywordConditions = [];
-            uniqueNames.forEach(name => {
-                keywordConditions.push({ category: { contains: name, mode: 'insensitive' } });
-                if (name.toLowerCase().endsWith('s')) {
-                    const singular = name.slice(0, -1);
-                    if (singular.length > 2) {
-                        keywordConditions.push({ category: { contains: singular, mode: 'insensitive' } });
-                    }
-                }
-            });
             where.OR = [
+                { categoryId: { in: uniqueIds } },
                 { category: { in: uniqueNames, mode: 'insensitive' } },
                 { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
-                ...keywordConditions,
             ];
         }
         const hasFilters = colors || sizes || materials || merchants || types || minPrice || maxPrice;

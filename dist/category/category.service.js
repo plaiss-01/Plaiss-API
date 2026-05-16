@@ -52,11 +52,16 @@ let CategoryService = class CategoryService {
     }
     async create(data) {
         const slug = this.slugify(data.name);
-        const existing = await this.prisma.category.findUnique({
-            where: { name: data.name },
+        const existing = await this.prisma.category.findFirst({
+            where: {
+                OR: [
+                    { name: data.name },
+                    { slug: slug }
+                ]
+            },
         });
         if (existing) {
-            throw new common_1.ConflictException(`Category with name "${data.name}" already exists.`);
+            throw new common_1.ConflictException(`Category with name "${data.name}" or slug "${slug}" already exists.`);
         }
         return this.prisma.category.create({
             data: {
@@ -132,9 +137,22 @@ let CategoryService = class CategoryService {
         const currentCategory = await this.prisma.category.findUnique({ where: { id } });
         if (!currentCategory)
             throw new common_1.NotFoundException('Category not found');
-        if (data.name) {
+        if (data.name && data.name !== currentCategory.name) {
+            const slug = this.slugify(data.name);
+            const existing = await this.prisma.category.findFirst({
+                where: {
+                    OR: [
+                        { name: data.name },
+                        { slug: slug }
+                    ],
+                    NOT: { id }
+                }
+            });
+            if (existing) {
+                throw new common_1.ConflictException(`Category with name "${data.name}" or slug "${slug}" already exists.`);
+            }
             updateData.name = data.name;
-            updateData.slug = this.slugify(data.name);
+            updateData.slug = slug;
             await this.prisma.product.updateMany({
                 where: { category: { equals: currentCategory.name, mode: 'insensitive' } },
                 data: { category: data.name },

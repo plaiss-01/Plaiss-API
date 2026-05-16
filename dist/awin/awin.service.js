@@ -665,6 +665,7 @@ let AwinService = AwinService_1 = class AwinService {
         sales_discount = EXCLUDED.sales_discount,
         raw_row = EXCLUDED.raw_row,
         transformed_at = EXCLUDED.transformed_at,
+
         loaded_at = NOW()
     `);
         const [{ count }] = await this.prisma.$queryRawUnsafe(`SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.prod}"`);
@@ -814,7 +815,7 @@ let AwinService = AwinService_1 = class AwinService {
         const imageUrl = this.toHttps(getVal(['merchant_image_url', 'aw_image_url', 'large_image', 'image_url', 'alternate_image', 'image', 'aw_thumb_url']));
         const rawProductType = getVal(['product_type']);
         const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
-        const categoryName = this.extractLeafCategory(rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']));
+        let categoryName = this.extractLeafCategory(rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']));
         const sofaText = this.combineAwinFields(getVal, [
             'product_name',
             'name',
@@ -826,7 +827,15 @@ let AwinService = AwinService_1 = class AwinService {
             'productType',
             'merchant_product_category_path',
         ]);
-        if (!/sofa|couch|settee|chair|light|decor|plant|rug|kitchen/.test(sofaText) ||
+        const name = (productName || '').toLowerCase();
+        const desc = (getVal(['description', 'product_description']) || '').toLowerCase();
+        const type = (rawProductType || '').toLowerCase();
+        const path = (getVal(['merchant_product_category_path']) || '').toLowerCase();
+        const hasLED = /\bLED\b/i.test(name) || /\bLED\b/i.test(desc);
+        const hasLightingType = /\b(wall|floor|table|lamp)s?\b/i.test(type) || /\b(wall|floor|table|lamp)s?\b/i.test(path);
+        const isLighting = hasLED || hasLightingType;
+        const isOtherDesired = /sofa|couch|settee|chair|rug|decor|plant|kitchen/i.test(sofaText);
+        if ((!isOtherDesired && !isLighting) ||
             !awProductId ||
             !productName ||
             !price ||
@@ -834,6 +843,16 @@ let AwinService = AwinService_1 = class AwinService {
             !categoryName ||
             categoryName === 'collection') {
             return null;
+        }
+        if (hasLED && hasLightingType) {
+            if (/\bwall\b/i.test(sofaText))
+                categoryName = 'Wall LED';
+            else if (/\bfloor\b/i.test(sofaText))
+                categoryName = 'Floor LED';
+            else if (/\btable\b/i.test(sofaText))
+                categoryName = 'Table LED';
+            else if (/\blamp\b/i.test(sofaText))
+                categoryName = 'Lamp LED';
         }
         const productModelClean = this.inferAwinProductModel(row, getVal, categoryName);
         const colourClean = this.inferAwinColour(row, getVal, categoryName);

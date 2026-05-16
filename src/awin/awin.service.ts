@@ -120,7 +120,7 @@ export class AwinService {
     private readonly prisma: PrismaService,
     private readonly statusService: ImportStatusService,
     private readonly categoryService: CategoryService,
-  ) {}
+  ) { }
 
   private slugify(text: string | undefined | null, suffix?: string) {
     if (!text) return `product-${suffix || Date.now()}`;
@@ -137,7 +137,7 @@ export class AwinService {
   async addProductFromUrl(input: string) {
     // Split by newlines, commas, or spaces to support bulk links
     const urls = input.split(/[\n\r\t]+/).map(u => u.trim()).filter(Boolean);
-    
+
     if (urls.length === 0) return { message: 'No valid URLs provided' };
 
     const results: any[] = [];
@@ -157,11 +157,11 @@ export class AwinService {
         if (url.includes('datafeed/download')) {
           const jobId = `feed-${Date.now()}`;
           this.statusService.setJob(jobId, 0, 100, 'processing', 'Starting feed import...');
-          
+
           this.processFeed(url, jobId).catch(e => {
             this.statusService.failJob(jobId, e.message);
           });
-          
+
           results.push({ url, status: 'started', jobId });
         } else {
           // Check if already exists before scraping to prevent fetching
@@ -170,20 +170,20 @@ export class AwinService {
 
           let exists = false;
           if (potentialAwinId) {
-             const existing = await this.prisma.product.findUnique({ where: { id: potentialAwinId } });
-             if (existing) exists = true;
+            const existing = await this.prisma.product.findUnique({ where: { id: potentialAwinId } });
+            if (existing) exists = true;
           }
           if (!exists) {
-             const existingByUrl = await this.prisma.product.findFirst({ where: { productUrl: url } });
-             if (existingByUrl) exists = true;
+            const existingByUrl = await this.prisma.product.findFirst({ where: { productUrl: url } });
+            if (existingByUrl) exists = true;
           }
 
           if (exists) {
-             this.logger.log(`Product already exists for URL ${url}. Skipping fetch.`);
-             results.push({ url, status: 'skipped', message: 'Product already added. Not fetching.' });
+            this.logger.log(`Product already exists for URL ${url}. Skipping fetch.`);
+            results.push({ url, status: 'skipped', message: 'Product already added. Not fetching.' });
           } else {
-             const res = await this.scrapeSingleProduct(url);
-             results.push({ url, status: 'success', data: res });
+            const res = await this.scrapeSingleProduct(url);
+            results.push({ url, status: 'success', data: res });
           }
         }
       } catch (error) {
@@ -205,7 +205,7 @@ export class AwinService {
       }
       return results[0].data;
     }
-    
+
     return { results };
   }
 
@@ -225,21 +225,21 @@ export class AwinService {
     }
 
     this.logger.log(`Fetching feed from: ${url}`);
-    
+
     try {
       const response = await firstValueFrom(
-        this.httpService.get(url, { 
+        this.httpService.get(url, {
           responseType: 'stream',
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
           }
         })
       );
-      
+
       const stream = response.data as Readable;
-      const isGzip = url.includes('compression/gzip') || 
-                     response.headers['content-encoding'] === 'gzip' ||
-                     url.endsWith('.gz');
+      const isGzip = url.includes('compression/gzip') ||
+        response.headers['content-encoding'] === 'gzip' ||
+        url.endsWith('.gz');
 
       let count = 0;
 
@@ -278,7 +278,7 @@ export class AwinService {
 
           // Merge normalized keys back into row for upsertProduct to find them easily
           const rowWithMapping = { ...row, aw_product_id: awProductId, product_name: productName };
-          
+
           await this.upsertProduct(rowWithMapping);
           rowsProcessed++;
 
@@ -319,9 +319,9 @@ export class AwinService {
       for await (const row of parser) {
         try {
           if (!row.aw_product_id || !row.product_name) continue;
-          
+
           await this.upsertProduct(row);
-          
+
           count++;
           if (count % 10 === 0) {
             this.statusService.updateJob(jobId, count, `Imported ${count} products...`);
@@ -418,7 +418,7 @@ export class AwinService {
     let batch: Array<{ row: any; rowNumber: number }> = [];
     for await (const row of parser) {
       count++;
-      
+
       if (count <= startRow) {
         continue;
       }
@@ -578,7 +578,7 @@ export class AwinService {
 
     for (let i = 0; i < mappedRows.length; i += insertBatchSize) {
       const chunk = mappedRows.slice(i, i + insertBatchSize);
-      
+
       const values: any[] = [];
       const placeholders = chunk.map((row, rowIndex) => {
         const offset = rowIndex * fields.length;
@@ -591,7 +591,7 @@ export class AwinService {
           }
           values.push(value);
         });
-        
+
         const rowPlaceholders = fields.map((_, fieldIndex) => {
           const idx = offset + fieldIndex + 1;
           if (fields[fieldIndex] === 'rawRow') {
@@ -599,7 +599,7 @@ export class AwinService {
           }
           return `$${idx}`;
         });
-        
+
         return `(${rowPlaceholders.join(', ')})`;
       });
 
@@ -746,6 +746,7 @@ export class AwinService {
         sales_discount = EXCLUDED.sales_discount,
         raw_row = EXCLUDED.raw_row,
         transformed_at = EXCLUDED.transformed_at,
+
         loaded_at = NOW()
     `);
 
@@ -954,7 +955,7 @@ export class AwinService {
     );
     const rawProductType = getVal(['product_type']);
     const rawMerchantCategory = getVal(['merchant_category', 'category_name', 'categoryname', 'category']);
-    const categoryName = this.extractLeafCategory(rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']));
+    let categoryName = this.extractLeafCategory(rawProductType || rawMerchantCategory || getVal(['merchant_product_category_path']));
     const sofaText = this.combineAwinFields(getVal, [
       'product_name',
       'name',
@@ -967,8 +968,19 @@ export class AwinService {
       'merchant_product_category_path',
     ]);
 
+    const name = (productName || '').toLowerCase();
+    const desc = (getVal(['description', 'product_description']) || '').toLowerCase();
+    const type = (rawProductType || '').toLowerCase();
+    const path = (getVal(['merchant_product_category_path']) || '').toLowerCase();
+
+    const hasLED = /\bLED\b/i.test(name) || /\bLED\b/i.test(desc);
+    const hasLightingType = /\b(wall|floor|table|lamp)s?\b/i.test(type) || /\b(wall|floor|table|lamp)s?\b/i.test(path);
+    const isLighting = hasLED || hasLightingType;
+    const isOtherDesired = /sofa|couch|settee|chair|rug|decor|plant|kitchen/i.test(sofaText);
+
+
     if (
-      !/sofa|couch|settee|chair|light|decor|plant|rug|kitchen/.test(sofaText) ||
+      (!isOtherDesired && !isLighting) ||
       !awProductId ||
       !productName ||
       !price ||
@@ -978,6 +990,18 @@ export class AwinService {
     ) {
       return null;
     }
+
+    // Update category name for LED lighting combinations
+    if (hasLED && hasLightingType) {
+      if (/\bwall\b/i.test(sofaText)) categoryName = 'Wall LED';
+      else if (/\bfloor\b/i.test(sofaText)) categoryName = 'Floor LED';
+      else if (/\btable\b/i.test(sofaText)) categoryName = 'Table LED';
+      else if (/\blamp\b/i.test(sofaText)) categoryName = 'Lamp LED';
+    }
+
+
+
+
 
     const productModelClean = this.inferAwinProductModel(row, getVal, categoryName);
     const colourClean = this.inferAwinColour(row, getVal, categoryName);
@@ -1067,6 +1091,7 @@ export class AwinService {
         sales_discount = EXCLUDED.sales_discount,
         raw_row = EXCLUDED.raw_row,
         transformed_at = NOW()`,
+
       row.awProductId,
       row.merchantProductId || null,
       row.productName,
@@ -1126,7 +1151,7 @@ export class AwinService {
 
     for (let i = 0; i < rows.length; i += insertBatchSize) {
       const chunk = rows.slice(i, i + insertBatchSize);
-      
+
       const productsToUpsert: any[] = [];
       for (const row of chunk) {
         let catRec: { id: string; name: string; } | null | undefined = categoryCache.get(row.category_name.toLowerCase().trim());
@@ -1136,7 +1161,7 @@ export class AwinService {
             categoryCache.set(row.category_name.toLowerCase().trim(), catRec);
           }
         }
-        
+
         productsToUpsert.push({
           id: randomUUID(),
           name: row.product_name,
@@ -1172,7 +1197,7 @@ export class AwinService {
           if (value === undefined) value = null;
           values.push(value);
         });
-        
+
         const rowPlaceholders = fields.map((_, fieldIndex) => `$${offset + fieldIndex + 1}`);
         return `(${rowPlaceholders.join(', ')}, NOW())`;
       });
@@ -1210,8 +1235,8 @@ export class AwinService {
         RETURNING id, "awinId"
       `;
 
-      const result = await this.prisma.$queryRawUnsafe<Array<{id: string, awinId: string}>>(query, ...values);
-      
+      const result = await this.prisma.$queryRawUnsafe<Array<{ id: string, awinId: string }>>(query, ...values);
+
 
 
       synced += chunk.length;
@@ -1571,14 +1596,14 @@ export class AwinService {
         finalCategory = catRec.name;
       }
     }
-    
+
     // Ensure product has basic complete attributes
     const finalPrice = parseFloat(getVal(['search_price', 'price'])) || 0;
-    
+
     // Find first image that isn't a broken placeholder
     const imageKeys = ['merchant_image_url', 'large_image', 'aw_image_url', 'image_url', 'alternate_image', 'image', 'aw_thumb_url'];
     let finalImageUrl = '';
-    
+
     for (const key of imageKeys) {
       const val = getVal([key]);
       if (val && !val.includes('noimage.gif') && !val.includes('no_image')) {
@@ -1586,14 +1611,14 @@ export class AwinService {
         break;
       }
     }
-    
+
     // Fallback if all have noimage or are empty
     if (!finalImageUrl) {
       finalImageUrl = (getVal(imageKeys) || '').replace('http://', 'https://');
     }
-    
+
     if (!productName || productName === 'Unknown Product' || finalPrice === 0 || !finalImageUrl || !finalCategory || finalCategory === 'collection') {
-       throw new Error(`Product has incomplete attributes. Name: ${productName}, Price: ${finalPrice}, Category: ${finalCategory}. Must not import.`);
+      throw new Error(`Product has incomplete attributes. Name: ${productName}, Price: ${finalPrice}, Category: ${finalCategory}. Must not import.`);
     }
 
     const productData: any = {
@@ -1690,39 +1715,39 @@ export class AwinService {
     let mainProductIdToUse = null;
 
     if (parentProductId) {
-       const existingParent = await (this.prisma as any).product.findFirst({
-          where: { OR: [{ awinId: parentProductId }, { parentProductId: parentProductId }] }
-       });
-       if (existingParent && existingParent.awinId !== awProductId) {
-          mainProductIdToUse = existingParent.id;
-       }
+      const existingParent = await (this.prisma as any).product.findFirst({
+        where: { OR: [{ awinId: parentProductId }, { parentProductId: parentProductId }] }
+      });
+      if (existingParent && existingParent.awinId !== awProductId) {
+        mainProductIdToUse = existingParent.id;
+      }
     }
 
     if (!mainProductIdToUse && productData.productModel) {
-       const existingByModel = await (this.prisma as any).product.findFirst({
-          where: { productModel: productData.productModel, brandName: productData.brandName }
-       });
-       if (existingByModel && existingByModel.awinId !== awProductId) {
-          mainProductIdToUse = existingByModel.id;
-       }
+      const existingByModel = await (this.prisma as any).product.findFirst({
+        where: { productModel: productData.productModel, brandName: productData.brandName }
+      });
+      if (existingByModel && existingByModel.awinId !== awProductId) {
+        mainProductIdToUse = existingByModel.id;
+      }
     }
 
     const colour = getVal(['colour', 'color']);
 
     if (!mainProductIdToUse && colour) {
-       // Try matching by base name (name without color)
-       let baseName = productName;
-       const regex = new RegExp(`\\b${colour}\\b`, 'ig');
-       baseName = baseName.replace(regex, '').replace(/[-\s_]+$/, '').trim();
-       
-       if (baseName.length > 5) { // Ensure baseName is significant
-           const existingByBaseName = await (this.prisma as any).product.findFirst({
-              where: { name: { startsWith: baseName }, merchant: productData.merchant }
-           });
-           if (existingByBaseName && existingByBaseName.awinId !== awProductId) {
-              mainProductIdToUse = existingByBaseName.id;
-           }
-       }
+      // Try matching by base name (name without color)
+      let baseName = productName;
+      const regex = new RegExp(`\\b${colour}\\b`, 'ig');
+      baseName = baseName.replace(regex, '').replace(/[-\s_]+$/, '').trim();
+
+      if (baseName.length > 5) { // Ensure baseName is significant
+        const existingByBaseName = await (this.prisma as any).product.findFirst({
+          where: { name: { startsWith: baseName }, merchant: productData.merchant }
+        });
+        if (existingByBaseName && existingByBaseName.awinId !== awProductId) {
+          mainProductIdToUse = existingByBaseName.id;
+        }
+      }
     }
 
 
@@ -1759,37 +1784,37 @@ export class AwinService {
       const html = response.data;
       const $ = cheerio.load(html);
 
-      const name = $('meta[property="og:title"]').attr('content') || 
-                   $('meta[name="twitter:title"]').attr('content') ||
-                   $('title').text() || 'Unknown Product';
-      
-      const description = $('meta[property="og:description"]').attr('content') || 
-                          $('meta[name="description"]').attr('content') || '';
-      
-      const imageUrl = $('meta[property="og:image"]').attr('content') || 
-                        $('meta[name="twitter:image"]').attr('content') || '';
-      
+      const name = $('meta[property="og:title"]').attr('content') ||
+        $('meta[name="twitter:title"]').attr('content') ||
+        $('title').text() || 'Unknown Product';
+
+      const description = $('meta[property="og:description"]').attr('content') ||
+        $('meta[name="description"]').attr('content') || '';
+
+      const imageUrl = $('meta[property="og:image"]').attr('content') ||
+        $('meta[name="twitter:image"]').attr('content') || '';
+
       const productUrl = url;
 
       // Extract Price
       let price = 0;
-      const priceMeta = $('meta[property="product:price:amount"]').attr('content') || 
-                        $('meta[name="twitter:data1"]').attr('content') ||
-                        $('[itemprop="price"]').attr('content');
-      
+      const priceMeta = $('meta[property="product:price:amount"]').attr('content') ||
+        $('meta[name="twitter:data1"]').attr('content') ||
+        $('[itemprop="price"]').attr('content');
+
       if (priceMeta && typeof priceMeta === 'string') {
         price = parseFloat(priceMeta.replace(/[^0-9.]/g, '')) || 0;
       }
-      
+
       // Extract Currency
-      const currency = $('meta[property="product:price:currency"]').attr('content') || 
-                       $('meta[itemprop="priceCurrency"]').attr('content') || 'GBP';
+      const currency = $('meta[property="product:price:currency"]').attr('content') ||
+        $('meta[itemprop="priceCurrency"]').attr('content') || 'GBP';
 
       // Extract Category
-      const category = $('meta[property="product:category"]').attr('content') || 
-                       $('meta[property="product:section"]').attr('content') ||
-                       $('meta[name="category"]').attr('content') ||
-                       'collection';
+      const category = $('meta[property="product:category"]').attr('content') ||
+        $('meta[property="product:section"]').attr('content') ||
+        $('meta[name="category"]').attr('content') ||
+        'collection';
 
       const safeCategory = (category || 'collection').toLowerCase().trim();
 
@@ -1949,7 +1974,7 @@ export class AwinService {
         if (inserts.length > 0) {
           const insertQuery = `
             INSERT INTO "ProductColorVariant" (id, product_id, color_name, image_url, product_url, awin_id)
-            VALUES ${inserts.map((_, i) => `(gen_random_uuid(), $${i*5 + 1}, $${i*5 + 2}, $${i*5 + 3}, $${i*5 + 4}, $${i*5 + 5})`).join(', ')}
+            VALUES ${inserts.map((_, i) => `(gen_random_uuid(), $${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`).join(', ')}
             ON CONFLICT DO NOTHING
           `;
           const flatInserts = inserts.flat();
@@ -1977,18 +2002,18 @@ export class AwinService {
       const variants = sorted.slice(1);
 
       const seenColors = new Set<string>();
-      const masterColor = master.colour || master.name.split(' ').find((word: string) => 
+      const masterColor = master.colour || master.name.split(' ').find((word: string) =>
         ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase())
       );
       if (masterColor) seenColors.add(masterColor.toLowerCase());
 
       for (const v of variants) {
-        const colorName = v.colour || v.name.split(' ').find((word: string) => 
+        const colorName = v.colour || v.name.split(' ').find((word: string) =>
           ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase())
         ) || 'Original';
 
         const colorKey = colorName.toLowerCase();
-        
+
         batchDeletes.push(v.id);
         mergedCount++;
         variantCount++;

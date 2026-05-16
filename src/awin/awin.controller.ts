@@ -508,23 +508,10 @@ export class AwinController {
 
       console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
 
-      // Build keyword contains conditions for each unique name (e.g. "Sofas" also matches "Fabric Sofas")
-      // We also add the singular version if it ends with 's' to match "Sofa" in "Sofa Beds"
-      const keywordConditions: any[] = [];
-      uniqueNames.forEach(name => {
-        keywordConditions.push({ category: { contains: name, mode: 'insensitive' as const } });
-        if (name.toLowerCase().endsWith('s')) {
-          const singular = name.slice(0, -1);
-          if (singular.length > 2) {
-            keywordConditions.push({ category: { contains: singular, mode: 'insensitive' as const } });
-          }
-        }
-      });
-
       where.OR = [
+        { categoryId: { in: uniqueIds } },
         { category: { in: uniqueNames, mode: 'insensitive' } },
         { merchantCategory: { in: uniqueNames, mode: 'insensitive' } },
-        ...keywordConditions,
       ];
     }
 

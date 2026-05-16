@@ -50,12 +50,17 @@ export class CategoryService {
   async create(data: { name: string; parentId?: string; isAwin?: boolean }) {
     const slug = this.slugify(data.name);
     
-    // Check if category already exists
-    const existing = await this.prisma.category.findUnique({
-      where: { name: data.name },
+    // Check if category already exists by name or slug
+    const existing = await this.prisma.category.findFirst({
+      where: {
+        OR: [
+          { name: data.name },
+          { slug: slug }
+        ]
+      },
     });
     if (existing) {
-      throw new ConflictException(`Category with name "${data.name}" already exists.`);
+      throw new ConflictException(`Category with name "${data.name}" or slug "${slug}" already exists.`);
     }
 
     return this.prisma.category.create({
@@ -139,9 +144,26 @@ export class CategoryService {
     const currentCategory = await this.prisma.category.findUnique({ where: { id } });
     if (!currentCategory) throw new NotFoundException('Category not found');
     
-    if (data.name) {
+    if (data.name && data.name !== currentCategory.name) {
+      const slug = this.slugify(data.name);
+      
+      // Check if another category already has this name or slug
+      const existing = await this.prisma.category.findFirst({
+        where: {
+          OR: [
+            { name: data.name },
+            { slug: slug }
+          ],
+          NOT: { id }
+        }
+      });
+      
+      if (existing) {
+        throw new ConflictException(`Category with name "${data.name}" or slug "${slug}" already exists.`);
+      }
+
       updateData.name = data.name;
-      updateData.slug = this.slugify(data.name);
+      updateData.slug = slug;
       
       // Also update products if needed
       await this.prisma.product.updateMany({
