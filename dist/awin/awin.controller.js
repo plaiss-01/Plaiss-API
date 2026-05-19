@@ -287,20 +287,75 @@ let AwinController = AwinController_1 = class AwinController {
         return products.map((product) => this.enhanceProductImages(product));
     }
     async getFacets(category, subs) {
-        let allCategoryNames = [];
-        if (category)
-            allCategoryNames.push(category);
-        if (subs)
-            allCategoryNames = allCategoryNames.concat(subs.split(','));
-        if (allCategoryNames.length === 0) {
+        if (!category && !subs) {
             return { sizes: [], colors: [], materials: [], priceMin: 0, priceMax: 0 };
         }
-        const where = {
-            OR: allCategoryNames.map(name => ({
-                category: { contains: name, mode: 'insensitive' }
-            }))
-        };
-        const [sizes, colors, materials] = await Promise.all([
+        const where = {};
+        const allCategoryNames = [];
+        const allCategoryIds = [];
+        if (category) {
+            const { data: allCats, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
+            const targetCats = allCats.filter(c => c.slug.toLowerCase() === category.toLowerCase() ||
+                c.name.toLowerCase() === category.toLowerCase());
+            const getDescendantIds = (catId, visited = new Set()) => {
+                if (visited.has(catId))
+                    return [];
+                visited.add(catId);
+                let ids = [catId];
+                const children = childrenMap.get(catId) || [];
+                for (const child of children) {
+                    ids = ids.concat(getDescendantIds(child.id, visited));
+                }
+                return ids;
+            };
+            for (const cat of targetCats) {
+                const children = childrenMap.get(cat.id) || [];
+                if (children.length > 0) {
+                    for (const child of children) {
+                        const descendantIds = getDescendantIds(child.id);
+                        allCategoryIds.push(...descendantIds);
+                    }
+                }
+                else {
+                    allCategoryIds.push(cat.id);
+                    allCategoryNames.push(cat.name);
+                    allCategoryNames.push(cat.name.toLowerCase().trim());
+                }
+            }
+        }
+        if (subs) {
+            const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
+            const { data: allCats } = await this.categoryService.getCategoryStructure();
+            const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
+            allCategoryIds.push(...subCats.map(c => c.id));
+            if (allCategoryIds.length === 0) {
+                allCategoryNames.push(...subArray);
+            }
+        }
+        let uniqueIds = Array.from(new Set(allCategoryIds));
+        let uniqueNames = Array.from(new Set(allCategoryNames));
+        if (category && !uniqueNames.some(n => n.toLowerCase() === category.toLowerCase())) {
+            uniqueNames.push(category);
+        }
+        if (uniqueIds.length > 0 || uniqueNames.length > 0) {
+            where.OR = [];
+            if (uniqueIds.length > 0) {
+                where.OR.push({ categoryId: { in: uniqueIds } });
+            }
+            if (uniqueNames.length > 0) {
+                where.OR.push({
+                    OR: uniqueNames.map(name => ({
+                        category: { contains: name, mode: 'insensitive' }
+                    }))
+                });
+                where.OR.push({
+                    OR: uniqueNames.map(name => ({
+                        merchantCategory: { contains: name, mode: 'insensitive' }
+                    }))
+                });
+            }
+        }
+        const [sizes, colors, materials, merchants] = await Promise.all([
             this.prisma.product.findMany({
                 where,
                 distinct: ['sizeStockStatusClean'],
@@ -316,6 +371,11 @@ let AwinController = AwinController_1 = class AwinController {
                 distinct: ['productModelClean'],
                 select: { productModelClean: true },
             }),
+            this.prisma.product.findMany({
+                where,
+                distinct: ['merchant'],
+                select: { merchant: true },
+            }),
         ]);
         const priceAgg = await this.prisma.product.aggregate({
             where,
@@ -327,6 +387,7 @@ let AwinController = AwinController_1 = class AwinController {
             sizes: sizes.map((s) => s.sizeStockStatusClean).filter(Boolean),
             colors: colors.map((c) => c.colourClean).filter(Boolean),
             materials: materials.map((m) => m.productModelClean).filter(Boolean),
+            merchants: merchants.map((m) => m.merchant).filter(Boolean),
             priceMin: prices.length ? Math.min(...prices) : 0,
             priceMax: prices.length ? Math.max(...prices) : 0,
         };
@@ -381,13 +442,6 @@ let AwinController = AwinController_1 = class AwinController {
                     for (const child of children) {
                         const descendantIds = getDescendantIds(child.id);
                         allCategoryIds.push(...descendantIds);
-                        descendantIds.forEach(id => {
-                            const c = categoryMap.get(id);
-                            if (c) {
-                                allCategoryNames.push(c.name);
-                                allCategoryNames.push(c.name.toLowerCase().trim());
-                            }
-                        });
                     }
                 }
                 else {
@@ -398,9 +452,11 @@ let AwinController = AwinController_1 = class AwinController {
             }
             if (subs) {
                 const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
-                allCategoryNames.push(...subArray);
                 const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
                 allCategoryIds.push(...subCats.map(c => c.id));
+                if (allCategoryIds.length === 0) {
+                    allCategoryNames.push(...subArray);
+                }
             }
             let uniqueIds = Array.from(new Set(allCategoryIds));
             let uniqueNames = Array.from(new Set(allCategoryNames));

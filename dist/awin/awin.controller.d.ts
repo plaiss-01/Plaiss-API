@@ -79,9 +79,17 @@ export declare class AwinController {
     } | undefined>;
     getMixBrandsProducts(categories: string, limit?: string): Promise<any[]>;
     getFacets(category?: string, subs?: string): Promise<{
+        sizes: never[];
+        colors: never[];
+        materials: never[];
+        priceMin: number;
+        priceMax: number;
+        merchants?: undefined;
+    } | {
         sizes: any;
         colors: any;
         materials: any;
+        merchants: any;
         priceMin: number;
         priceMax: number;
     }>;
