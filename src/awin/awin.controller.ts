@@ -345,13 +345,14 @@ export class AwinController {
     const allCategoryNames: string[] = [];
     const allCategoryIds: string[] = [];
 
-    if (category) {
-      const { data: allCats, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
+    const { data: allCats, categoryMap, childrenMap } = await this.categoryService.getCategoryStructure();
 
-      const targetCats = allCats.filter(c =>
-        c.slug.toLowerCase() === category.toLowerCase() ||
-        c.name.toLowerCase() === category.toLowerCase()
-      );
+    const targetCats = category ? allCats.filter(c =>
+      c.slug.toLowerCase() === category.toLowerCase() ||
+      c.name.toLowerCase() === category.toLowerCase()
+    ) : [];
+
+    if (category) {
 
       const getDescendantIds = (catId: string, visited = new Set<string>()): string[] => {
         if (visited.has(catId)) return [];
@@ -383,7 +384,6 @@ export class AwinController {
       const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
       
       // Also try to find IDs for these sub names
-      const { data: allCats } = await this.categoryService.getCategoryStructure();
       const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
       allCategoryIds.push(...subCats.map(c => c.id));
 
@@ -415,6 +415,41 @@ export class AwinController {
             merchantCategory: { contains: name, mode: 'insensitive' as const }
           }))
         });
+      }
+
+      // If the root category is Lighting or a subcategory of Lighting, aggressively filter out miscategorized furniture
+      let isLightingCategory = false;
+      if (category && category.toLowerCase() === 'lighting') {
+        isLightingCategory = true;
+      } else {
+          if (targetCats) {
+            for (const cat of targetCats) {
+              let currentCat = cat;
+              while (currentCat) {
+                if (currentCat.name.toLowerCase() === 'lighting' || currentCat.slug.toLowerCase() === 'lighting') {
+                  isLightingCategory = true;
+                  break;
+                }
+                currentCat = currentCat.parentId ? categoryMap.get(currentCat.parentId) : null;
+              }
+              if (isLightingCategory) break;
+            }
+          }
+      }
+      if (isLightingCategory) {
+        const nonLightingTerms = [
+          'chair', 'sofa', 'stool', 'bench', 'dining table', 'side table', 
+          'coffee table', 'console table', 'dressing table', 'wardrobe', 
+          'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe', 
+          'bar table', 'bistro table', 'bedside', 'ottoman'
+        ];
+        const notConditions = nonLightingTerms.map(term => ({
+          name: { contains: term, mode: 'insensitive' as const }
+        }));
+        
+        // Ensure where.AND exists
+        if (!where.AND) where.AND = [];
+        where.AND.push({ NOT: { OR: notConditions } });
       }
     }
 
@@ -597,6 +632,43 @@ export class AwinController {
           })),
         },
       ];
+
+      // If the root category is Lighting or a subcategory of Lighting, aggressively filter out miscategorized furniture
+      let isLightingCategory = false;
+      console.log(`[isLightingCategory Check] category: ${category}`);
+      console.log(`[isLightingCategory Check] targetCats:`, targetCats.map(c => ({id: c.id, name: c.name, parentId: c.parentId})));
+      if (category && category.toLowerCase() === 'lighting') {
+        isLightingCategory = true;
+      } else {
+        for (const cat of targetCats) {
+          let currentCat = cat;
+          while (currentCat) {
+            console.log(`[isLightingCategory Check] tracing: ${currentCat.name}`);
+            if (currentCat.name.toLowerCase() === 'lighting' || currentCat.slug.toLowerCase() === 'lighting') {
+              isLightingCategory = true;
+              break;
+            }
+            currentCat = currentCat.parentId ? categoryMap.get(currentCat.parentId) : null;
+          }
+          if (isLightingCategory) break;
+        }
+      }
+      console.log(`[isLightingCategory Check] result: ${isLightingCategory}`);
+      if (isLightingCategory) {
+        const nonLightingTerms = [
+          'chair', 'sofa', 'stool', 'bench', 'dining table', 'side table', 
+          'coffee table', 'console table', 'dressing table', 'wardrobe', 
+          'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe', 
+          'bar table', 'bistro table', 'bedside', 'ottoman'
+        ];
+        const notConditions = nonLightingTerms.map(term => ({
+          name: { contains: term, mode: 'insensitive' as const }
+        }));
+        
+        // Ensure where.AND exists
+        if (!where.AND) where.AND = [];
+        where.AND.push({ NOT: { OR: notConditions } });
+      }
     }
 
     // Server-side filtering
@@ -637,8 +709,9 @@ export class AwinController {
         andConditions.push({ price: priceCond });
       }
 
-      if (andConditions.length > 0) {
-        where.AND = andConditions;
+      if (hasFilters && andConditions.length > 0) {
+        if (!where.AND) where.AND = [];
+        where.AND.push(...andConditions);
       }
     }
 
