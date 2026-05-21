@@ -171,6 +171,43 @@ export class AwinController {
     };
   }
 
+  private isUnderLighting(catId?: string | null, categoryMap?: Map<string, any>): boolean {
+    if (!catId || !categoryMap) return false;
+    let current = categoryMap.get(catId);
+    while (current) {
+      if (current.name.toLowerCase() === 'lighting' || current.slug.toLowerCase() === 'lighting') {
+        return true;
+      }
+      current = current.parentId ? categoryMap.get(current.parentId) : null;
+    }
+    return false;
+  }
+
+  private getCategoryTerms(name: string): string[] {
+    const terms = [name];
+    const lower = name.toLowerCase();
+    
+    // Plural to singular rules
+    if (lower.endsWith('ies')) {
+      terms.push(name.slice(0, -3) + 'y');
+    } else if (lower.endsWith('es') && (lower.endsWith('ches') || lower.endsWith('shes') || lower.endsWith('xes'))) {
+      terms.push(name.slice(0, -2));
+    } else if (lower.endsWith('s') && !lower.endsWith('ss') && !lower.endsWith('us') && !lower.endsWith('as')) {
+      terms.push(name.slice(0, -1));
+    }
+    
+    // Singular to plural rules
+    if (lower.endsWith('y') && !lower.endsWith('ey') && !lower.endsWith('ay') && !lower.endsWith('oy') && !lower.endsWith('uy')) {
+      terms.push(name.slice(0, -1) + 'ies');
+    } else if (lower.endsWith('ch') || lower.endsWith('sh') || lower.endsWith('x')) {
+      terms.push(name + 'es');
+    } else if (!lower.endsWith('s')) {
+      terms.push(name + 's');
+    }
+
+    return Array.from(new Set(terms));
+  }
+
   @Get('pipeline/tables')
   @ApiOperation({ summary: 'Get AWIN raw/dev/prod pipeline table names' })
   async getPipelineTables() {
@@ -371,11 +408,18 @@ export class AwinController {
           for (const child of children) {
             const descendantIds = getDescendantIds(child.id);
             allCategoryIds.push(...descendantIds);
+            
+            // If NOT under lighting, add descendant terms
+            if (!this.isUnderLighting(child.id, categoryMap)) {
+              allCategoryNames.push(...this.getCategoryTerms(child.name));
+            }
           }
         } else {
           allCategoryIds.push(cat.id);
-          allCategoryNames.push(cat.name);
-          allCategoryNames.push(cat.name.toLowerCase().trim());
+          // If NOT under lighting, add terms
+          if (!this.isUnderLighting(cat.id, categoryMap)) {
+            allCategoryNames.push(...this.getCategoryTerms(cat.name));
+          }
         }
       }
     }
@@ -387,22 +431,35 @@ export class AwinController {
       const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
       allCategoryIds.push(...subCats.map(c => c.id));
 
-      if (allCategoryIds.length === 0) {
-        allCategoryNames.push(...subArray);
+      // For subs NOT under lighting, we should ALWAYS add their names/terms to allCategoryNames
+      for (const subName of subArray) {
+        const subCat = allCats.find(c => c.name.toLowerCase() === subName.toLowerCase());
+        if (!subCat || !this.isUnderLighting(subCat.id, categoryMap)) {
+          allCategoryNames.push(...this.getCategoryTerms(subName));
+        }
       }
     }
 
     let uniqueIds = Array.from(new Set(allCategoryIds));
     let uniqueNames = Array.from(new Set(allCategoryNames));
 
-    if (category && !uniqueNames.some(n => n.toLowerCase() === category.toLowerCase())) {
-      uniqueNames.push(category);
+    // If no subcategories are requested, include the requested category name/terms
+    if (category && !subs) {
+      const categoryTerms = this.isUnderLighting(targetCats[0]?.id, categoryMap)
+        ? [category]
+        : this.getCategoryTerms(category);
+      for (const term of categoryTerms) {
+        if (!uniqueNames.some(n => n.toLowerCase() === term.toLowerCase())) {
+          uniqueNames.push(term);
+        }
+      }
     }
 
     if (uniqueIds.length > 0 || uniqueNames.length > 0) {
       where.OR = [];
       if (uniqueIds.length > 0) {
-        where.OR.push({ categoryId: { in: uniqueIds } });
+        // Fix categoryId field mismatch -> use categoryRel!
+        where.OR.push({ categoryRel: { id: { in: uniqueIds } } });
       }
       if (uniqueNames.length > 0) {
         where.OR.push({
@@ -573,16 +630,18 @@ export class AwinController {
             const descendantIds = getDescendantIds(child.id);
             allCategoryIds.push(...descendantIds);
             
-            // We do NOT add descendant names to allCategoryNames here.
-            // Generic names like 'Table', 'Floor', 'Wall' under 'Lighting' 
-            // cause fuzzy matching to pull in 'Dining Tables' or 'Floor Mirrors'.
-            // categoryId is reliably populated, so IDs are sufficient.
+            // If NOT under lighting, add descendant terms to allCategoryNames
+            if (!this.isUnderLighting(child.id, categoryMap)) {
+              allCategoryNames.push(...this.getCategoryTerms(child.name));
+            }
           }
         } else {
           // If category has NO children, use its own ID and Name
           allCategoryIds.push(cat.id);
-          allCategoryNames.push(cat.name);
-          allCategoryNames.push(cat.name.toLowerCase().trim());
+          // If NOT under lighting, add terms to allCategoryNames
+          if (!this.isUnderLighting(cat.id, categoryMap)) {
+            allCategoryNames.push(...this.getCategoryTerms(cat.name));
+          }
         }
       }
 
@@ -593,20 +652,28 @@ export class AwinController {
         const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
         allCategoryIds.push(...subCats.map(c => c.id));
 
-        // ONLY fallback to text matching for subcategories if we found ZERO IDs in the entire tree.
-        // If we already have the IDs (e.g. Lighting -> Table), adding 'Table' to names
-        // will cause fuzzy matching against 'Dining Table' across all merchants!
-        if (allCategoryIds.length === 0) {
-          allCategoryNames.push(...subArray);
+        // For subs NOT under lighting, we should ALWAYS add their names/terms to allCategoryNames
+        for (const subName of subArray) {
+          const subCat = allCats.find(c => c.name.toLowerCase() === subName.toLowerCase());
+          if (!subCat || !this.isUnderLighting(subCat.id, categoryMap)) {
+            allCategoryNames.push(...this.getCategoryTerms(subName));
+          }
         }
       }
 
       let uniqueIds = Array.from(new Set(allCategoryIds));
       let uniqueNames = Array.from(new Set(allCategoryNames));
 
-      // Always include the requested category name in the search terms!
-      if (category && !uniqueNames.some(n => n.toLowerCase() === category.toLowerCase())) {
-        uniqueNames.push(category);
+      // If no subcategories are requested, include the requested category name/terms
+      if (category && !subs) {
+        const categoryTerms = this.isUnderLighting(targetCats[0]?.id, categoryMap)
+          ? [category]
+          : this.getCategoryTerms(category);
+        for (const term of categoryTerms) {
+          if (!uniqueNames.some(n => n.toLowerCase() === term.toLowerCase())) {
+            uniqueNames.push(term);
+          }
+        }
       }
 
       // FALLBACK LOGIC: If we found target categories but they have 0 products (check via pre-calculated count if possible, or just prepare OR)
@@ -621,7 +688,7 @@ export class AwinController {
       console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
 
       where.OR = [
-        { categoryId: { in: uniqueIds } },
+        { categoryRel: { id: { in: uniqueIds } } },
         {
           OR: uniqueNames.map((name) => ({
             category: { contains: name, mode: 'insensitive' as const },
