@@ -35,6 +35,12 @@ function cleanCoreName(name) {
   return cleaned;
 }
 
+function parseCleanPrice(value) {
+  if (value === undefined || value === null) return null;
+  const parsed = parseFloat(String(value).replace(/,/g, '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 const standardColourMap = {
   black: 'Black',
   white: 'White',
@@ -284,12 +290,12 @@ async function main() {
       for (const row of batch) {
         const awProductId = row.aw_product_id;
         const productName = row.product_name;
-        const price = parseFloat(row.search_price) || 0;
+        const price = parseCleanPrice(row.search_price) || 0;
         const imageUrl = getImageUrl(row);
         const productUrl = row.aw_deep_link || row.product_url;
         const categoryName = determineCategory(row);
-        const originalPriceClean = parseFloat(row.rrp_price || row.base_price || row.product_price_old) || null;
-        const discountedPriceClean = parseFloat(row.display_price || row.search_price || row.store_price) || null;
+        const originalPriceClean = parseCleanPrice(row.rrp_price || row.base_price || row.product_price_old) || null;
+        const discountedPriceClean = parseCleanPrice(row.display_price || row.search_price || row.store_price) || null;
         const saving = (originalPriceClean && discountedPriceClean && originalPriceClean - discountedPriceClean >= 5) ? (originalPriceClean - discountedPriceClean) : 0;
         const colourClean = inferColour(row);
 

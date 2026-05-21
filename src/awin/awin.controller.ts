@@ -479,19 +479,20 @@ export class AwinController {
     // For prices, we can just do a simple findMany and calculate or use aggregate if available
     const priceAgg = await (this.prisma.product as any).aggregate({
       where,
-      _min: { discountedPriceClean: true },
-      _max: { discountedPriceClean: true },
+      _min: { discountedPriceClean: true, price: true },
+      _max: { discountedPriceClean: true, price: true },
     });
  
-    const prices = [priceAgg._min.discountedPriceClean, priceAgg._max.discountedPriceClean].filter(Boolean);
+    const minPriceVal = priceAgg._min.discountedPriceClean ?? priceAgg._min.price;
+    const maxPriceVal = priceAgg._max.discountedPriceClean ?? priceAgg._max.price;
 
     return {
       sizes: sizes.map((s: any) => s.sizeStockStatusClean).filter(Boolean),
       colors: colors.map((c: any) => c.colourClean).filter(Boolean),
       materials: materials.map((m: any) => m.productModelClean).filter(Boolean),
       merchants: merchants.map((m: any) => m.merchant).filter(Boolean),
-      priceMin: prices.length ? Math.min(...prices) : 0,
-      priceMax: prices.length ? Math.max(...prices) : 0,
+      priceMin: minPriceVal ?? 0,
+      priceMax: maxPriceVal ?? 0,
     };
   }
 
