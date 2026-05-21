@@ -1062,7 +1062,10 @@ let AwinService = AwinService_1 = class AwinService {
     }
     inferAwinProductModel(row, getVal, categoryName) {
         const cat = categoryName.toLowerCase();
-        if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+        if (cat.includes('light')) {
+            return null;
+        }
+        if (cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
             return 'Standard';
         }
         const fields = [
@@ -1150,7 +1153,10 @@ let AwinService = AwinService_1 = class AwinService {
     }
     inferAwinSizeStockStatus(row, getVal, categoryName) {
         const cat = categoryName.toLowerCase();
-        if (cat.includes('light') || cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
+        if (cat.includes('light')) {
+            return null;
+        }
+        if (cat.includes('decor') || cat.includes('plant') || cat.includes('rug') || cat.includes('kitchen')) {
             return 'Standard';
         }
         const existing = getVal(['size_stock_status', 'sizeStockStatus']);
