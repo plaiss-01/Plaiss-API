@@ -1155,6 +1155,46 @@ export class AwinController {
     this.productsCache.clear(); // Clear cache to reflect deletions
     return result;
   }
+  @Post('products/bulk-delete')
+  @ApiOperation({ summary: 'Bulk delete products by category and/or name/description pattern' })
+  async bulkDeleteByFilter(
+    @Body() body: { category?: string; namePattern?: string; descriptionPattern?: string },
+  ) {
+    const where: any = {};
+
+    if (body.category) {
+      where.OR = [
+        { category: { contains: body.category, mode: 'insensitive' } },
+        { merchantCategory: { contains: body.category, mode: 'insensitive' } },
+      ];
+    }
+
+    if (body.namePattern || body.descriptionPattern) {
+      const patternConditions: any[] = [];
+      if (body.namePattern) {
+        patternConditions.push({ name: { contains: body.namePattern, mode: 'insensitive' } });
+      }
+      if (body.descriptionPattern) {
+        patternConditions.push({ description: { contains: body.descriptionPattern, mode: 'insensitive' } });
+      }
+      const patternOr = { OR: patternConditions };
+
+      where.AND = where.AND || [];
+      where.AND.push(patternOr);
+    }
+
+    const products = await this.prisma.product.findMany({ where, select: { id: true } });
+    const ids = products.map((p) => p.id);
+
+    if (ids.length > 0) {
+      await this.prisma.productColorVariant.deleteMany({ where: { productId: { in: ids } } });
+      await this.prisma.product.deleteMany({ where: { id: { in: ids } } });
+    }
+
+    this.productsCache.clear();
+    return { deleted: ids.length };
+  }
+
   @Post('products/deduplicate')
   @ApiOperation({ summary: 'Run global product deduplication' })
   async deduplicate() {

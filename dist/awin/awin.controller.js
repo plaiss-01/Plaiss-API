@@ -942,6 +942,35 @@ let AwinController = AwinController_1 = class AwinController {
         this.productsCache.clear();
         return result;
     }
+    async bulkDeleteByFilter(body) {
+        const where = {};
+        if (body.category) {
+            where.OR = [
+                { category: { contains: body.category, mode: 'insensitive' } },
+                { merchantCategory: { contains: body.category, mode: 'insensitive' } },
+            ];
+        }
+        if (body.namePattern || body.descriptionPattern) {
+            const patternConditions = [];
+            if (body.namePattern) {
+                patternConditions.push({ name: { contains: body.namePattern, mode: 'insensitive' } });
+            }
+            if (body.descriptionPattern) {
+                patternConditions.push({ description: { contains: body.descriptionPattern, mode: 'insensitive' } });
+            }
+            const patternOr = { OR: patternConditions };
+            where.AND = where.AND || [];
+            where.AND.push(patternOr);
+        }
+        const products = await this.prisma.product.findMany({ where, select: { id: true } });
+        const ids = products.map((p) => p.id);
+        if (ids.length > 0) {
+            await this.prisma.productColorVariant.deleteMany({ where: { productId: { in: ids } } });
+            await this.prisma.product.deleteMany({ where: { id: { in: ids } } });
+        }
+        this.productsCache.clear();
+        return { deleted: ids.length };
+    }
     async deduplicate() {
         const result = await this.awinService.deduplicateProducts();
         this.productsCache.clear();
@@ -1122,6 +1151,14 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], AwinController.prototype, "deleteProductsByMerchant", null);
+__decorate([
+    (0, common_1.Post)('products/bulk-delete'),
+    (0, swagger_1.ApiOperation)({ summary: 'Bulk delete products by category and/or name/description pattern' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AwinController.prototype, "bulkDeleteByFilter", null);
 __decorate([
     (0, common_1.Post)('products/deduplicate'),
     (0, swagger_1.ApiOperation)({ summary: 'Run global product deduplication' }),

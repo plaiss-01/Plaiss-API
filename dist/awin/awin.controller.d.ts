@@ -168,6 +168,13 @@ export declare class AwinController {
         sizeStockStatusClean: string | null;
     }>;
     deleteProductsByMerchant(merchantName: string): Promise<import("@prisma/client").Prisma.BatchPayload>;
+    bulkDeleteByFilter(body: {
+        category?: string;
+        namePattern?: string;
+        descriptionPattern?: string;
+    }): Promise<{
+        deleted: number;
+    }>;
     deduplicate(): Promise<{
         mergedCount: number;
         variantCount: number;
