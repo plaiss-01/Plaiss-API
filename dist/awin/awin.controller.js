@@ -166,10 +166,28 @@ let AwinController = AwinController_1 = class AwinController {
         }
         return candidates[0] || '';
     }
+    normalizeDeliveryTime(raw) {
+        let s = raw.trim();
+        s = s.replace(/\s*working\s+days/i, ' days');
+        s = s.replace(/\s*-\s*/g, '-');
+        return s.trim();
+    }
     enhanceProductImages(product) {
         if (!product)
             return product;
         const img = this.getBestProductImage(product);
+        let rawData = {};
+        if (product.rawRow) {
+            try {
+                rawData = typeof product.rawRow === 'string' ? JSON.parse(product.rawRow) : product.rawRow;
+            }
+            catch {
+            }
+        }
+        const raw = rawData.delivery_time ||
+            product.deliveryTime ||
+            'N/A';
+        const deliveryTime = this.normalizeDeliveryTime(raw);
         return {
             ...product,
             imageUrl: img,
@@ -178,6 +196,7 @@ let AwinController = AwinController_1 = class AwinController {
             colorVariants: product.colorVariants || [],
             colors: product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : [],
             normalizedAttributes: {},
+            deliveryTime,
         };
     }
     isUnderLighting(catId, categoryMap) {

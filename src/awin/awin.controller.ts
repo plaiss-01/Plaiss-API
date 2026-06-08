@@ -156,10 +156,36 @@ export class AwinController {
     return candidates[0] || '';
   }
 
+  private normalizeDeliveryTime(raw: string): string {
+    let s = raw.trim();
+    // "2 - 10 Working Days" / "5-7 working days" → strip "working", keep "days"
+    s = s.replace(/\s*working\s+days/i, ' days');
+    // Collapse spaces around dashes: "2 - 10" → "2-10"
+    s = s.replace(/\s*-\s*/g, '-');
+    return s.trim();
+  }
+
   private enhanceProductImages(product: any) {
     if (!product) return product;
 
     const img = this.getBestProductImage(product);
+
+    let rawData: any = {};
+    if (product.rawRow) {
+      try {
+        rawData = typeof product.rawRow === 'string' ? JSON.parse(product.rawRow) : product.rawRow;
+      } catch {
+        // ignore
+      }
+    }
+
+    const raw =
+      rawData.delivery_time ||
+      product.deliveryTime ||
+      'N/A';
+
+    const deliveryTime = this.normalizeDeliveryTime(raw);
+
     return {
       ...product,
       imageUrl: img,
@@ -168,6 +194,7 @@ export class AwinController {
       colorVariants: product.colorVariants || [],
       colors: product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : [],
       normalizedAttributes: {},
+      deliveryTime,
     };
   }
 

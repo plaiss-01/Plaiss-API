@@ -19,6 +19,7 @@ export declare class AwinController {
     private decodeProductServeSource;
     private normalizeProductImageUrl;
     private getBestProductImage;
+    private normalizeDeliveryTime;
     private enhanceProductImages;
     private isUnderLighting;
     private getCategoryTerms;
