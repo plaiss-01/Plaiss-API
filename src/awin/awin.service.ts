@@ -500,18 +500,28 @@ export class AwinService {
       this.statusService.updateJob(
         jobId,
         0,
-        `Found ${rawTotal} RAW rows. Reading the first RAW batch...`,
+        `Found ${rawTotal} RAW rows. Processing in streaming batches...`,
         rawTotal || 1,
       );
     }
 
     let transformed = 0;
     let skipped = 0;
-    const mappedRows: any[] = [];
     let rawProcessed = 0;
     let lastRowNumber = 0;
-    const batchSize = 10000;
+    const readBatchSize = 2000;
+    const insertBatchSize = 500;
 
+    const fields = [
+      'awProductId', 'merchantProductId', 'productName', 'slug', 'description', 'price',
+      'currency', 'imageUrl', 'productUrl', 'merchantName', 'categoryName', 'merchantCategory',
+      'categoryId', 'brandName', 'colour', 'productModel', 'productType', 'productModelClean',
+      'colourClean', 'sizeStockStatusClean', 'isRecliner', 'isSofaBed', 'baseSku',
+      'colourVariantNumber', 'originalPriceClean', 'discountedPriceClean', 'saving',
+      'salesDiscount', 'rawRow'
+    ];
+
+    // Stream RAW → DEV in small batches to avoid accumulating all rows in memory
     while (rawProcessed < rawTotal) {
       const rows = await this.prisma.$queryRawUnsafe<any[]>(
         `SELECT row_number, raw_row FROM "${this.awinPipelineTables.raw}"
@@ -519,11 +529,12 @@ export class AwinService {
          ORDER BY row_number ASC
          LIMIT $2`,
         lastRowNumber,
-        batchSize,
+        readBatchSize,
       );
 
       if (rows.length === 0) break;
 
+      const mappedBatch: any[] = [];
       for (const item of rows) {
         const mapped = this.mapAwinRawRowToPipelineRow(item.raw_row || {});
         if (!mapped) {
@@ -535,8 +546,73 @@ export class AwinService {
         ) {
           skipped++;
         } else {
-          mappedRows.push(mapped);
+          mappedBatch.push(mapped);
         }
+      }
+
+      // Write this batch to DEV immediately
+      for (let i = 0; i < mappedBatch.length; i += insertBatchSize) {
+        const chunk = mappedBatch.slice(i, i + insertBatchSize);
+        const values: any[] = [];
+        const placeholders = chunk.map((row, rowIndex) => {
+          const offset = rowIndex * fields.length;
+          fields.forEach((field) => {
+            let value = row[field];
+            if (field === 'rawRow') value = JSON.stringify(value);
+            else if (value === undefined) value = null;
+            values.push(value);
+          });
+          const rowPlaceholders = fields.map((_, fieldIndex) => {
+            const idx = offset + fieldIndex + 1;
+            return fields[fieldIndex] === 'rawRow' ? `$${idx}::jsonb` : `$${idx}`;
+          });
+          return `(${rowPlaceholders.join(', ')})`;
+        });
+
+        const query = `
+          INSERT INTO "${this.awinPipelineTables.dev}" (
+            aw_product_id, merchant_product_id, product_name, slug, description, search_price,
+            currency, image_url, product_url, merchant_name, category_name, merchant_category,
+            category_id, brand_name, colour, product_model, product_type, product_model_clean,
+            colour_clean, size_stock_status_clean, is_recliner, is_sofa_bed, base_sku,
+            colour_variant_number, original_price_clean, discounted_price_clean, saving,
+            sales_discount, raw_row
+          )
+          VALUES ${placeholders.join(', ')}
+          ON CONFLICT (aw_product_id) DO UPDATE SET
+            merchant_product_id = EXCLUDED.merchant_product_id,
+            product_name = EXCLUDED.product_name,
+            slug = EXCLUDED.slug,
+            description = EXCLUDED.description,
+            search_price = EXCLUDED.search_price,
+            currency = EXCLUDED.currency,
+            image_url = EXCLUDED.image_url,
+            product_url = EXCLUDED.product_url,
+            merchant_name = EXCLUDED.merchant_name,
+            category_name = EXCLUDED.category_name,
+            merchant_category = EXCLUDED.merchant_category,
+            category_id = EXCLUDED.category_id,
+            brand_name = EXCLUDED.brand_name,
+            colour = EXCLUDED.colour,
+            product_model = EXCLUDED.product_model,
+            product_type = EXCLUDED.product_type,
+            product_model_clean = EXCLUDED.product_model_clean,
+            colour_clean = EXCLUDED.colour_clean,
+            size_stock_status_clean = EXCLUDED.size_stock_status_clean,
+            is_recliner = EXCLUDED.is_recliner,
+            is_sofa_bed = EXCLUDED.is_sofa_bed,
+            base_sku = EXCLUDED.base_sku,
+            colour_variant_number = EXCLUDED.colour_variant_number,
+            original_price_clean = EXCLUDED.original_price_clean,
+            discounted_price_clean = EXCLUDED.discounted_price_clean,
+            saving = EXCLUDED.saving,
+            sales_discount = EXCLUDED.sales_discount,
+            raw_row = EXCLUDED.raw_row,
+            transformed_at = NOW()
+        `;
+
+        await this.prisma.$executeRawUnsafe(query, ...values);
+        transformed += chunk.length;
       }
 
       rawProcessed += rows.length;
@@ -546,118 +622,30 @@ export class AwinService {
         this.statusService.updateJob(
           jobId,
           rawProcessed,
-          `Mapped ${rawProcessed} of ${rawTotal} RAW rows. ${mappedRows.length} valid products found...`,
-          rawTotal || rows.length || 1,
+          `Processed ${rawProcessed}/${rawTotal} RAW rows, saved ${transformed} to DEV...`,
+          rawTotal || 1,
         );
       }
 
       await this.yieldToEventLoop();
     }
 
-    this.addVariantNumbers(mappedRows);
-
-    const totalWork = rawTotal + mappedRows.length;
+    // Set colour_variant_number via SQL window function — avoids loading all rows into memory
     if (jobId) {
-      this.statusService.updateJob(
-        jobId,
-        rawProcessed,
-        `Saving ${mappedRows.length} transformed DEV rows...`,
-        totalWork || 1,
-      );
+      this.statusService.updateJob(jobId, rawTotal, `Computing colour variant numbers...`, rawTotal || 1);
     }
-
-    const insertBatchSize = 1000;
-    const fields = [
-      'awProductId', 'merchantProductId', 'productName', 'slug', 'description', 'price',
-      'currency', 'imageUrl', 'productUrl', 'merchantName', 'categoryName', 'merchantCategory',
-      'categoryId', 'brandName', 'colour', 'productModel', 'productType', 'productModelClean',
-      'colourClean', 'sizeStockStatusClean', 'isRecliner', 'isSofaBed', 'baseSku',
-      'colourVariantNumber', 'originalPriceClean', 'discountedPriceClean', 'saving',
-      'salesDiscount', 'rawRow'
-    ];
-
-    for (let i = 0; i < mappedRows.length; i += insertBatchSize) {
-      const chunk = mappedRows.slice(i, i + insertBatchSize);
-
-      const values: any[] = [];
-      const placeholders = chunk.map((row, rowIndex) => {
-        const offset = rowIndex * fields.length;
-        fields.forEach((field) => {
-          let value = row[field];
-          if (field === 'rawRow') {
-            value = JSON.stringify(value);
-          } else if (value === undefined) {
-            value = null;
-          }
-          values.push(value);
-        });
-
-        const rowPlaceholders = fields.map((_, fieldIndex) => {
-          const idx = offset + fieldIndex + 1;
-          if (fields[fieldIndex] === 'rawRow') {
-            return `$${idx}::jsonb`;
-          }
-          return `$${idx}`;
-        });
-
-        return `(${rowPlaceholders.join(', ')})`;
-      });
-
-      const query = `
-        INSERT INTO "${this.awinPipelineTables.dev}" (
-          aw_product_id, merchant_product_id, product_name, slug, description, search_price,
-          currency, image_url, product_url, merchant_name, category_name, merchant_category,
-          category_id, brand_name, colour, product_model, product_type, product_model_clean,
-          colour_clean, size_stock_status_clean, is_recliner, is_sofa_bed, base_sku,
-          colour_variant_number, original_price_clean, discounted_price_clean, saving,
-          sales_discount, raw_row
-        )
-        VALUES ${placeholders.join(', ')}
-        ON CONFLICT (aw_product_id) DO UPDATE SET
-          merchant_product_id = EXCLUDED.merchant_product_id,
-          product_name = EXCLUDED.product_name,
-          slug = EXCLUDED.slug,
-          description = EXCLUDED.description,
-          search_price = EXCLUDED.search_price,
-          currency = EXCLUDED.currency,
-          image_url = EXCLUDED.image_url,
-          product_url = EXCLUDED.product_url,
-          merchant_name = EXCLUDED.merchant_name,
-          category_name = EXCLUDED.category_name,
-          merchant_category = EXCLUDED.merchant_category,
-          category_id = EXCLUDED.category_id,
-          brand_name = EXCLUDED.brand_name,
-          colour = EXCLUDED.colour,
-          product_model = EXCLUDED.product_model,
-          product_type = EXCLUDED.product_type,
-          product_model_clean = EXCLUDED.product_model_clean,
-          colour_clean = EXCLUDED.colour_clean,
-          size_stock_status_clean = EXCLUDED.size_stock_status_clean,
-          is_recliner = EXCLUDED.is_recliner,
-          is_sofa_bed = EXCLUDED.is_sofa_bed,
-          base_sku = EXCLUDED.base_sku,
-          colour_variant_number = EXCLUDED.colour_variant_number,
-          original_price_clean = EXCLUDED.original_price_clean,
-          discounted_price_clean = EXCLUDED.discounted_price_clean,
-          saving = EXCLUDED.saving,
-          sales_discount = EXCLUDED.sales_discount,
-          raw_row = EXCLUDED.raw_row,
-          transformed_at = NOW()
-      `;
-
-      await this.prisma.$executeRawUnsafe(query, ...values);
-      transformed += chunk.length;
-
-      const processed = rawTotal + transformed;
-      if (jobId) {
-        this.statusService.updateJob(
-          jobId,
-          processed,
-          `Saved ${transformed} products to DEV...`,
-          totalWork || 1,
-        );
-      }
-    }
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "${this.awinPipelineTables.dev}" d
+      SET colour_variant_number = sub.rn
+      FROM (
+        SELECT aw_product_id,
+               ROW_NUMBER() OVER (PARTITION BY base_sku ORDER BY colour_clean) AS rn
+        FROM "${this.awinPipelineTables.dev}"
+        WHERE base_sku IS NOT NULL AND base_sku <> 'Unknown'
+          AND colour_clean IS NOT NULL AND colour_clean <> 'Unknown'
+      ) sub
+      WHERE d.aw_product_id = sub.aw_product_id
+    `);
 
     // Clear RAW table after successful transformation
     this.logger.log('Clearing RAW table after transformation...');
