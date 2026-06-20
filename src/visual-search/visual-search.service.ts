@@ -27,7 +27,7 @@ export class VisualSearchService {
         'Ocp-Apim-Subscription-Key': key,
         'Content-Type': 'application/octet-stream',
       },
-      body: imageBuffer,
+      body: imageBuffer as unknown as BodyInit,
     });
 
     if (!response.ok) {
