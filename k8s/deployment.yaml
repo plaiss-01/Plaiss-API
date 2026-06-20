@@ -15,8 +15,54 @@ spec:
         app: plaiss-api
     spec:
       containers:
+      - name: pgbouncer
+        image: bitnami/pgbouncer:1.23.1
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRESQL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: plaiss-api-config
+              key: PGBOUNCER_DB_HOST
+        - name: POSTGRESQL_PORT
+          value: "5432"
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: plaiss-api-config
+              key: PGBOUNCER_DB_NAME
+        - name: POSTGRESQL_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: plaiss-api-config
+              key: PGBOUNCER_DB_USER
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: plaiss-api-secrets
+              key: POSTGRESQL_PASSWORD
+        - name: PGBOUNCER_POOL_MODE
+          value: "transaction"
+        - name: PGBOUNCER_MAX_CLIENT_CONN
+          value: "100"
+        - name: PGBOUNCER_DEFAULT_POOL_SIZE
+          value: "5"
+        - name: PGBOUNCER_MIN_POOL_SIZE
+          value: "2"
+        - name: PGBOUNCER_LISTEN_PORT
+          value: "5432"
+        - name: PGBOUNCER_SERVER_IDLE_TIMEOUT
+          value: "600"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
       - name: plaiss-api
-        image: <YOUR_ECR_REPOSITORY_URL>:latest # Replace with your ECR URL
+        image: <YOUR_ECR_REPOSITORY_URL>:latest
         ports:
         - containerPort: 3001
         envFrom:
@@ -24,7 +70,13 @@ spec:
             name: plaiss-api-config
         - secretRef:
             name: plaiss-api-secrets
-        # For production RDS, connection is managed via Secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
 
 ---
 apiVersion: v1

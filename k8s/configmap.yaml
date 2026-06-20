@@ -5,4 +5,6 @@ metadata:
 data:
   NODE_ENV: "production"
   PORT: "3001"
-  # Add other non-sensitive env vars here
+  PGBOUNCER_DB_HOST: "eraofmarketing-db.cluster-cfu6wo4i8gx2.eu-north-1.rds.amazonaws.com"
+  PGBOUNCER_DB_NAME: "eraofmarketing"
+  PGBOUNCER_DB_USER: "eraadmin"

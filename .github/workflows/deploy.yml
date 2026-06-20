@@ -42,7 +42,7 @@ jobs:
       - name: Sync environment variables to Kubernetes
         run: |
           kubectl create secret generic plaiss-api-secrets \
-            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=DATABASE_URL="postgresql://eraadmin:${{ secrets.DB_PASSWORD }}@127.0.0.1:5432/eraofmarketing?schema=public" \
             --from-literal=PORT="${{ secrets.PORT }}" \
             --from-literal=S3_REGION="${{ secrets.S3_REGION }}" \
             --from-literal=S3_BUCKET="${{ secrets.S3_BUCKET }}" \

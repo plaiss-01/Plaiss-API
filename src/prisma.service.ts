@@ -18,13 +18,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
     const pool = new Pool({ 
       connectionString: url,
-      max: 20, // Limit maximum connections
-      idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-      connectionTimeoutMillis: 30000, // Return an error after 30 seconds if connection cannot be established
-      keepAlive: true, // Help keep the connection alive
+      max: 5,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 30000,
+      keepAlive: true,
     });
 
-    // Add error handler to pool to prevent process crashes on unexpected disconnects
     pool.on('error', (err) => {
       this.logger.error('Unexpected error on idle client', err);
     });
@@ -44,4 +43,3 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     await this.$disconnect();
   }
 }
-
