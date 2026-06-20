@@ -225,10 +225,23 @@ export class CategoryService {
       select: { category: true },
       distinct: ['category'],
     });
+
+    let newlyCreated = 0;
+    for (const { category } of products) {
+      if (!category) continue;
+      const slug = this.slugify(category);
+      await this.prisma.category.upsert({
+        where: { slug },
+        update: {},
+        create: { name: category, slug, isAwin: true },
+      });
+      newlyCreated++;
+    }
+
     this.clearCache();
     return {
       message: `Found ${products.length} unique categories in products`,
-      newlyCreated: 0,
+      newlyCreated,
     };
   }
 }
