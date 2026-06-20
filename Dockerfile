@@ -36,6 +36,8 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/start.sh ./start.sh
+RUN chmod +x start.sh
 
 # Set production environment
 ENV NODE_ENV=production
@@ -43,5 +45,4 @@ ENV PORT=3001
 
 EXPOSE 3001
 
-# Use node directly for better signal handling
-CMD ["node", "dist/main.js"]
+CMD ["sh", "start.sh"]
