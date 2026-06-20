@@ -17,7 +17,7 @@ RUN npm install
 COPY . .
 
 # Generate Prisma client and build the app
-RUN npx prisma generate
+RUN NO_COLOR=1 npx prisma generate
 RUN npm run build
 
 # Prune development dependencies
