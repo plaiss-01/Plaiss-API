@@ -17,7 +17,8 @@ RUN npm install
 COPY . .
 
 # Generate Prisma client and build the app
-RUN NO_COLOR=1 npx prisma generate
+# Capture output to temp file and strip non-ASCII (Unicode chars crash az acr build on Windows)
+RUN sh -c 'NO_COLOR=1 npx prisma generate > /tmp/pg.txt 2>&1; RC=$?; tr -cd "[:print:]\n" < /tmp/pg.txt; exit $RC'
 RUN npm run build
 
 # Prune development dependencies
@@ -38,6 +39,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/start.sh ./start.sh
+COPY --from=builder /app/scripts ./scripts
 RUN chmod +x start.sh
 
 # Set production environment
