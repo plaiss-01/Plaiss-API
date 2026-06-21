@@ -22,7 +22,7 @@ export class AwinController {
   ) { }
 
   private productsCache = new Map<string, { data: any, timestamp: number }>();
-  private readonly CACHE_TTL = 30000; // 30 seconds for category structure
+  private readonly CACHE_TTL = 300000; // 5 minutes
   private readonly MAX_CACHE_SIZE = 20; // Maximum number of cached queries
   private readonly productListSelect = {
     id: true,
