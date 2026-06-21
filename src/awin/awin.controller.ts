@@ -156,10 +156,36 @@ export class AwinController {
     return candidates[0] || '';
   }
 
+  private normalizeDeliveryTime(raw: string): string {
+    let s = raw.trim();
+    // "2 - 10 Working Days" / "5-7 working days" → strip "working", keep "days"
+    s = s.replace(/\s*working\s+days/i, ' days');
+    // Collapse spaces around dashes: "2 - 10" → "2-10"
+    s = s.replace(/\s*-\s*/g, '-');
+    return s.trim();
+  }
+
   private enhanceProductImages(product: any) {
     if (!product) return product;
 
     const img = this.getBestProductImage(product);
+
+    let rawData: any = {};
+    if (product.rawRow) {
+      try {
+        rawData = typeof product.rawRow === 'string' ? JSON.parse(product.rawRow) : product.rawRow;
+      } catch {
+        // ignore
+      }
+    }
+
+    const raw =
+      rawData.delivery_time ||
+      product.deliveryTime ||
+      'N/A';
+
+    const deliveryTime = this.normalizeDeliveryTime(raw);
+
     return {
       ...product,
       imageUrl: img,
@@ -168,6 +194,7 @@ export class AwinController {
       colorVariants: product.colorVariants || [],
       colors: product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : [],
       normalizedAttributes: {},
+      deliveryTime,
     };
   }
 
@@ -1155,6 +1182,46 @@ export class AwinController {
     this.productsCache.clear(); // Clear cache to reflect deletions
     return result;
   }
+  @Post('products/bulk-delete')
+  @ApiOperation({ summary: 'Bulk delete products by category and/or name/description pattern' })
+  async bulkDeleteByFilter(
+    @Body() body: { category?: string; namePattern?: string; descriptionPattern?: string },
+  ) {
+    const where: any = {};
+
+    if (body.category) {
+      where.OR = [
+        { category: { contains: body.category, mode: 'insensitive' } },
+        { merchantCategory: { contains: body.category, mode: 'insensitive' } },
+      ];
+    }
+
+    if (body.namePattern || body.descriptionPattern) {
+      const patternConditions: any[] = [];
+      if (body.namePattern) {
+        patternConditions.push({ name: { contains: body.namePattern, mode: 'insensitive' } });
+      }
+      if (body.descriptionPattern) {
+        patternConditions.push({ description: { contains: body.descriptionPattern, mode: 'insensitive' } });
+      }
+      const patternOr = { OR: patternConditions };
+
+      where.AND = where.AND || [];
+      where.AND.push(patternOr);
+    }
+
+    const products = await this.prisma.product.findMany({ where, select: { id: true } });
+    const ids = products.map((p) => p.id);
+
+    if (ids.length > 0) {
+      await this.prisma.productColorVariant.deleteMany({ where: { productId: { in: ids } } });
+      await this.prisma.product.deleteMany({ where: { id: { in: ids } } });
+    }
+
+    this.productsCache.clear();
+    return { deleted: ids.length };
+  }
+
   @Post('products/deduplicate')
   @ApiOperation({ summary: 'Run global product deduplication' })
   async deduplicate() {
