@@ -1,10 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 export declare class UploadService {
     private readonly configService;
-    private readonly s3Client;
+    private readonly blobServiceClient;
     private readonly logger;
-    private readonly bucketName;
-    private readonly region;
+    private readonly containerName;
     constructor(configService: ConfigService);
     uploadFile(file: Express.Multer.File): Promise<{
         url: string;
