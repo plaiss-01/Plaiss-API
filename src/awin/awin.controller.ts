@@ -611,9 +611,13 @@ export class AwinController {
       }
     }
 
+    const ARTIFICIAL_TERMS = ['artificial', 'plastic', 'fake', 'faux', 'synthetic'];
     const where: any = {
       imageUrl: { not: null },
       NOT: { imageUrl: '' },
+      AND: [
+        { NOT: { OR: ARTIFICIAL_TERMS.map(t => ({ name: { contains: t, mode: 'insensitive' as const } })) } },
+      ],
     };
     if (search) {
       where.OR = [

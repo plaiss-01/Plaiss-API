@@ -965,9 +965,10 @@ export class AwinService {
     const hasLightingType = /\b(wall|floor|table|lamp)s?\b/i.test(type) || /\b(wall|floor|table|lamp)s?\b/i.test(path);
     const isLighting = hasLED || hasLightingType;
     const isOtherDesired = /sofa|couch|settee|chair|rug|decor|plant|kitchen/i.test(sofaText);
-
+    const isArtificial = /artificial|plastic|fake|faux|synthetic/i.test(name);
 
     if (
+      isArtificial ||
       (!isOtherDesired && !isLighting) ||
       !awProductId ||
       !productName ||
