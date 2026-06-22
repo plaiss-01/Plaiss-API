@@ -16,12 +16,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       throw new Error('DATABASE_URL must be a valid PostgreSQL connection string.');
     }
 
-    const pool = new Pool({ 
+    const pool = new Pool({
       connectionString: url,
       max: 5,
-      idleTimeoutMillis: 10000,
+      idleTimeoutMillis: 60000,
       connectionTimeoutMillis: 30000,
       keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
     });
 
     pool.on('error', (err) => {

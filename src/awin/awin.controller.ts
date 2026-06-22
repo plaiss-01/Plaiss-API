@@ -810,11 +810,41 @@ export class AwinController {
       }
     }
 
+    // Fast path: no category / no search / no filters → skip merchant interleaving,
+    // use standard DB-level pagination (avoids loading all 133K IDs into memory).
+    if (!category && !search && !hasFilters) {
+      const [pageData, pageTotal] = await Promise.all([
+        (this.prisma.product as any).findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: l,
+          select: this.productListSelect,
+        }),
+        (this.prisma.product as any).count({ where }),
+      ]);
+
+      const result = {
+        data: pageData.map((p: any) => this.enhanceProductImages(p)),
+        meta: { total: pageTotal, page: p, limit: l, totalPages: Math.ceil(pageTotal / l) },
+      };
+
+      if (this.productsCache.size >= this.MAX_CACHE_SIZE) {
+        const oldestKey = this.productsCache.keys().next().value;
+        if (oldestKey) this.productsCache.delete(oldestKey);
+      }
+      this.productsCache.set(cacheKey, { data: result, timestamp: now });
+      return result;
+    }
+
+    // For category/search: cap the ID pre-fetch to avoid loading the entire table.
+    // 10 000 rows covers ~200 pages of 50; beyond that standard pagination kicks in anyway.
     let [idResults, total] = await Promise.all([
       (this.prisma.product as any).findMany({
         where,
         select: { id: true, merchant: true },
         orderBy: { createdAt: 'desc' },
+        take: 10000,
       }),
       (this.prisma.product as any).count({ where }),
     ]);

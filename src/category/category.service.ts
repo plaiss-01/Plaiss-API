@@ -77,7 +77,7 @@ export class CategoryService {
     });
   }
 
-  async findAll(isAwin?: boolean, search?: string, limit: number = 100000, parentId?: string | null) {
+  async findAll(isAwin?: boolean, search?: string, limit: number = 500, parentId?: string | null) {
     const where: any = {};
     if (isAwin !== undefined) {
       where.isAwin = isAwin;
@@ -94,11 +94,17 @@ export class CategoryService {
 
     return this.prisma.category.findMany({
       where,
-      include: {
-        children: true,
-        parent: true,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        isAwin: true,
+        parentId: true,
+        children: { select: { id: true, name: true, slug: true, parentId: true } },
+        parent: { select: { id: true, name: true, slug: true } },
       },
-      take: limit > 0 ? limit : undefined,
+      take: limit > 0 ? limit : 500,
+      orderBy: { name: 'asc' },
     });
   }
 
