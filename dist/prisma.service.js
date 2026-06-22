@@ -26,8 +26,8 @@ let PrismaService = PrismaService_1 = class PrismaService extends client_1.Prism
         }
         const pool = new pg_1.Pool({
             connectionString: url,
-            max: 20,
-            idleTimeoutMillis: 30000,
+            max: 5,
+            idleTimeoutMillis: 10000,
             connectionTimeoutMillis: 30000,
             keepAlive: true,
         });
