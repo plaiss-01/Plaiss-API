@@ -628,6 +628,7 @@ export class AwinController {
       NOT: { imageUrl: '' },
       AND: [
         { NOT: { OR: ARTIFICIAL_TERMS.map(t => ({ name: { contains: t, mode: 'insensitive' as const } })) } },
+        { OR: [{ colourVariantNumber: 1 }, { colourVariantNumber: null }] },
       ],
     };
     if (search) {
