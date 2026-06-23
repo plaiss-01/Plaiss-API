@@ -549,9 +549,14 @@ export class AwinService {
 
       if (rows.length === 0) break;
 
+      if (rawProcessed === 0 && rows.length > 0) {
+        const sample = rows[0].raw_row;
+        this.logger.log(`RAW row[0] type: ${typeof sample}, isArray: ${Array.isArray(sample)}, keys: ${typeof sample === 'object' && sample ? Object.keys(sample).slice(0, 5).join(',') : String(sample).slice(0, 80)}`);
+      }
       const mappedBatch: any[] = [];
       for (const item of rows) {
-        const mapped = this.mapAwinRawRowToPipelineRow(item.raw_row || {});
+        const rawData = typeof item.raw_row === 'string' ? JSON.parse(item.raw_row) : (item.raw_row || {});
+        const mapped = this.mapAwinRawRowToPipelineRow(rawData);
         if (!mapped) {
           skipped++;
         } else if (
