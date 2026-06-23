@@ -1,5 +1,5 @@
 // Triggering reload after prisma generate
-import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile, Logger, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile, Logger, BadRequestException, OnApplicationBootstrap } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AwinService } from './awin.service';
@@ -11,7 +11,7 @@ import { CategoryService } from '../category/category.service';
 
 @ApiTags('awin')
 @Controller('awin')
-export class AwinController {
+export class AwinController implements OnApplicationBootstrap {
   private readonly logger = new Logger(AwinController.name);
 
   constructor(
@@ -21,9 +21,23 @@ export class AwinController {
     private readonly categoryService: CategoryService,
   ) { }
 
+  async onApplicationBootstrap() {
+    const categories = ['Plants', 'Sofas', 'Lighting', 'Chairs', 'Decor'];
+    this.logger.log('[Warmup] Pre-populating product cache for popular categories...');
+    for (const cat of categories) {
+      try {
+        await this.getAllProducts('1', '24', cat);
+        this.logger.log(`[Warmup] Cached: ${cat}`);
+      } catch (e) {
+        this.logger.warn(`[Warmup] Failed for ${cat}: ${e.message}`);
+      }
+    }
+    this.logger.log('[Warmup] Done.');
+  }
+
   private productsCache = new Map<string, { data: any, timestamp: number }>();
-  private readonly CACHE_TTL = 300000; // 5 minutes
-  private readonly MAX_CACHE_SIZE = 20; // Maximum number of cached queries
+  private readonly CACHE_TTL = 1800000; // 30 minutes
+  private readonly MAX_CACHE_SIZE = 50; // Maximum number of cached queries
   private readonly productListSelect = {
     id: true,
     name: true,
@@ -647,7 +661,7 @@ export class AwinController {
         c.name.toLowerCase() === category.toLowerCase()
       );
 
-      console.log(`[getAllProducts] Query: "${category}", Found ${targetCats.length} target categories.`);
+;
 
       const getDescendantIds = (catId: string, visited = new Set<string>()): string[] => {
         if (visited.has(catId)) return [];
@@ -728,7 +742,7 @@ export class AwinController {
       // 2. If the query returns 0, we will check parents in the fallback section.
 
 
-      console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
+;
 
       where.OR = [
         { categoryRel: { id: { in: uniqueIds } } },
@@ -746,15 +760,12 @@ export class AwinController {
 
       // If the root category is Lighting or a subcategory of Lighting, aggressively filter out miscategorized furniture
       let isLightingCategory = false;
-      console.log(`[isLightingCategory Check] category: ${category}`);
-      console.log(`[isLightingCategory Check] targetCats:`, targetCats.map(c => ({id: c.id, name: c.name, parentId: c.parentId})));
       if (category && category.toLowerCase() === 'lighting') {
         isLightingCategory = true;
       } else {
         for (const cat of targetCats) {
           let currentCat = cat;
           while (currentCat) {
-            console.log(`[isLightingCategory Check] tracing: ${currentCat.name}`);
             if (currentCat.name.toLowerCase() === 'lighting' || currentCat.slug.toLowerCase() === 'lighting') {
               isLightingCategory = true;
               break;
@@ -764,7 +775,6 @@ export class AwinController {
           if (isLightingCategory) break;
         }
       }
-      console.log(`[isLightingCategory Check] result: ${isLightingCategory}`);
       if (isLightingCategory) {
         const nonLightingTerms = [
           'chair', 'sofa', 'stool', 'bench', 'dining table', 'side table', 
@@ -794,7 +804,37 @@ export class AwinController {
       }
       if (sizes) {
         const array = sizes.replace(/\+/g, ' ').split(',').map(s => s.trim());
-        andConditions.push({ OR: array.map(val => ({ sizeStockStatusClean: { contains: val, mode: 'insensitive' as const } })) });
+        const sizeConditions = array.flatMap(val => {
+          const conds: any[] = [
+            { sizeStockStatusClean: { contains: val, mode: 'insensitive' as const } },
+            { productType: { contains: val, mode: 'insensitive' as const } },
+          ];
+          // X Seater → match product name ("2 seater", "2-seater", "2 seat")
+          const seaterMatch = val.match(/^(\d+)\s+seat(?:er)?s?$/i);
+          if (seaterMatch) {
+            const num = seaterMatch[1];
+            conds.push(
+              { name: { contains: `${num} seat`, mode: 'insensitive' as const } },
+              { name: { contains: `${num}-seat`, mode: 'insensitive' as const } },
+            );
+          }
+          if (/corner|chaise|l.shape/i.test(val)) {
+            conds.push(
+              { name: { contains: 'corner', mode: 'insensitive' as const } },
+              { name: { contains: 'chaise', mode: 'insensitive' as const } },
+              { name: { contains: 'l-shape', mode: 'insensitive' as const } },
+              { name: { contains: 'l shape', mode: 'insensitive' as const } },
+            );
+          }
+          if (/sofa.bed|sofabed/i.test(val)) {
+            conds.push(
+              { name: { contains: 'sofa bed', mode: 'insensitive' as const } },
+              { name: { contains: 'sofabed', mode: 'insensitive' as const } },
+            );
+          }
+          return conds;
+        });
+        andConditions.push({ OR: sizeConditions });
       }
       if (materials) {
         const array = materials.replace(/\+/g, ' ').split(',').map(s => s.trim());
@@ -865,9 +905,6 @@ export class AwinController {
       (this.prisma.product as any).count({ where }),
     ]);
 
-    this.logger.log(`[getAllProducts] page: ${p}, limit: ${l}, category: ${category}, search: ${search}`);
-    this.logger.log(`[getAllProducts] where: ${JSON.stringify(where)}`);
-    this.logger.log(`[getAllProducts] idResults: ${idResults.length}, total: ${total}`);
 
     let data: any[] = [];
     if (idResults.length > 0) {
