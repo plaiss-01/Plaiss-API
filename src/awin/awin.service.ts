@@ -348,8 +348,8 @@ export class AwinService {
     const schema = 'public';
     return {
       raw: `${schema}."${this.awinPipelineTables.raw}"`,
-      dev: `${schema}."${this.awinPipelineTables.dev}"`,
-      prod: `${schema}."${this.awinPipelineTables.prod}"`,
+      dev: `${schema}.public."${this.awinPipelineTables.dev}"`,
+      prod: `${schema}.public."${this.awinPipelineTables.prod}"`,
       note: 'RAW is the direct AWIN extraction table, DEV is transformed for review, and PROD is the reviewed table Plaiss should read from.',
     };
   }
@@ -503,11 +503,11 @@ export class AwinService {
     await this.ensureAwinPipelineTables();
 
     if (replace) {
-      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.dev}"`);
+      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE public."${this.awinPipelineTables.dev}"`);
     }
 
     const [{ count: rawCount }] = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.raw}"`,
+      `SELECT COUNT(*)::int AS count FROM public."${this.awinPipelineTables.raw}"`,
     );
     const rawTotal = Number(rawCount) || 0;
 
@@ -539,7 +539,7 @@ export class AwinService {
     // Stream RAW → DEV in small batches to avoid accumulating all rows in memory
     while (rawProcessed < rawTotal) {
       const rows = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT row_number, raw_row FROM "${this.awinPipelineTables.raw}"
+        `SELECT row_number, raw_row FROM public."${this.awinPipelineTables.raw}"
          WHERE row_number > $1
          ORDER BY row_number ASC
          LIMIT $2`,
@@ -585,7 +585,7 @@ export class AwinService {
         });
 
         const query = `
-          INSERT INTO "${this.awinPipelineTables.dev}" (
+          INSERT INTO public."${this.awinPipelineTables.dev}" (
             aw_product_id, merchant_product_id, product_name, slug, description, search_price,
             currency, image_url, product_url, merchant_name, category_name, merchant_category,
             category_id, brand_name, colour, product_model, product_type, product_model_clean,
@@ -650,12 +650,12 @@ export class AwinService {
       this.statusService.updateJob(jobId, rawTotal, `Computing colour variant numbers...`, rawTotal || 1);
     }
     await this.prisma.$executeRawUnsafe(`
-      UPDATE "${this.awinPipelineTables.dev}" d
+      UPDATE public."${this.awinPipelineTables.dev}" d
       SET colour_variant_number = sub.rn
       FROM (
         SELECT aw_product_id,
                ROW_NUMBER() OVER (PARTITION BY base_sku ORDER BY colour_clean) AS rn
-        FROM "${this.awinPipelineTables.dev}"
+        FROM public."${this.awinPipelineTables.dev}"
         WHERE base_sku IS NOT NULL AND base_sku <> 'Unknown'
           AND colour_clean IS NOT NULL AND colour_clean <> 'Unknown'
       ) sub
@@ -664,7 +664,7 @@ export class AwinService {
 
     // Clear RAW table after successful transformation
     this.logger.log('Clearing RAW table after transformation...');
-    await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
+    await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE public."${this.awinPipelineTables.raw}"`);
 
     const result = {
       message: 'RAW transformed to DEV',
@@ -690,7 +690,7 @@ export class AwinService {
     await this.ensureAwinPipelineTables();
 
     const [{ count: devRows }] = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.dev}"`,
+      `SELECT COUNT(*)::int AS count FROM public."${this.awinPipelineTables.dev}"`,
     );
 
     if (jobId) {
@@ -703,7 +703,7 @@ export class AwinService {
     }
 
     await this.prisma.$executeRawUnsafe(`
-      INSERT INTO "${this.awinPipelineTables.prod}" (
+      INSERT INTO public."${this.awinPipelineTables.prod}" (
         aw_product_id, merchant_product_id, product_name, slug, description, search_price,
         currency, image_url, product_url, merchant_name, category_name, merchant_category,
         category_id, brand_name, colour, product_model, product_type, product_model_clean,
@@ -718,7 +718,7 @@ export class AwinService {
         colour_clean, size_stock_status_clean, is_recliner, is_sofa_bed, base_sku,
         colour_variant_number, original_price_clean, discounted_price_clean, saving,
         sales_discount, raw_row, transformed_at, NOW()
-      FROM "${this.awinPipelineTables.dev}"
+      FROM public."${this.awinPipelineTables.dev}"
       ON CONFLICT (aw_product_id) DO UPDATE SET
         merchant_product_id = EXCLUDED.merchant_product_id,
         product_name = EXCLUDED.product_name,
@@ -754,7 +754,7 @@ export class AwinService {
     `);
 
     const [{ count }] = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.prod}"`,
+      `SELECT COUNT(*)::int AS count FROM public."${this.awinPipelineTables.prod}"`,
     );
 
     if (jobId) {
@@ -780,7 +780,7 @@ export class AwinService {
 
     // Clear DEV table after successful promotion
     this.logger.log('Clearing DEV table after promotion...');
-    await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.dev}"`);
+    await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE public."${this.awinPipelineTables.dev}"`);
 
     const result = {
       message: 'DEV loaded to PROD',
@@ -844,7 +844,7 @@ export class AwinService {
 
   private async countAwinPipelineRows(tableName: string) {
     const [{ count }] = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(*)::int AS count FROM "${tableName}"`,
+      `SELECT COUNT(*)::int AS count FROM public."${tableName}"`,
     );
 
     return Number(count) || 0;
@@ -872,14 +872,14 @@ export class AwinService {
 
     for (const [column, type] of columns) {
       await this.prisma.$executeRawUnsafe(
-        `ALTER TABLE "${tableName}" ADD COLUMN IF NOT EXISTS ${column} ${type}`,
+        `ALTER TABLE public."${tableName}" ADD COLUMN IF NOT EXISTS ${column} ${type}`,
       );
     }
   }
 
   private createPipelineProductTableSql(tableName: string, includeLoadedAt: boolean) {
     return `
-      CREATE TABLE IF NOT EXISTS "${tableName}" (
+      CREATE TABLE IF NOT EXISTS public."${tableName}" (
         aw_product_id TEXT PRIMARY KEY,
         merchant_product_id TEXT,
         product_name TEXT NOT NULL,
@@ -1134,7 +1134,7 @@ export class AwinService {
 
   private async syncProductModelFromAwinProd(jobId?: string, progressOffset = 0, progressTotal?: number) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT * FROM "${this.awinPipelineTables.prod}" ORDER BY loaded_at DESC`,
+      `SELECT * FROM public."${this.awinPipelineTables.prod}" ORDER BY loaded_at DESC`,
     );
 
     let synced = 0;
