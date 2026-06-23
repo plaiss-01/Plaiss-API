@@ -23,19 +23,25 @@ export class AwinController implements OnApplicationBootstrap {
 
   async onApplicationBootstrap() {
     const categories = ['Plants', 'Sofas', 'Lighting', 'Chairs', 'Decor'];
-    this.logger.log('[Warmup] Pre-populating product cache for popular categories...');
-    for (const cat of categories) {
-      try {
-        await this.getAllProducts('1', '24', cat);
-        this.logger.log(`[Warmup] Cached: ${cat}`);
-      } catch (e) {
-        this.logger.warn(`[Warmup] Failed for ${cat}: ${e.message}`);
-      }
-    }
+    this.logger.log('[Warmup] Pre-populating product + facets cache for popular categories...');
+    await Promise.all(
+      categories.map(async (cat) => {
+        try {
+          await Promise.all([
+            this.getAllProducts('1', '24', cat),
+            this.getFacets(cat),
+          ]);
+          this.logger.log(`[Warmup] Cached products+facets: ${cat}`);
+        } catch (e) {
+          this.logger.warn(`[Warmup] Failed for ${cat}: ${e.message}`);
+        }
+      })
+    );
     this.logger.log('[Warmup] Done.');
   }
 
   private productsCache = new Map<string, { data: any, timestamp: number }>();
+  private facetsCache = new Map<string, { data: any, timestamp: number }>();
   private readonly CACHE_TTL = 1800000; // 30 minutes
   private readonly MAX_CACHE_SIZE = 50; // Maximum number of cached queries
   private readonly productListSelect = {
@@ -329,12 +335,13 @@ export class AwinController implements OnApplicationBootstrap {
         body?.syncProductTable !== false,
         jobId,
       )
-      .then(() => this.productsCache.clear())
+      .then(() => { this.productsCache.clear(); this.facetsCache.clear(); })
       .catch((e) => {
         this.statusService.failJob(jobId, e.message);
       });
 
     this.productsCache.clear();
+    this.facetsCache.clear();
     return {
       jobId,
       message: 'AWIN PROD promotion started',
@@ -415,6 +422,15 @@ export class AwinController implements OnApplicationBootstrap {
     @Query('category') category?: string,
     @Query('subs') subs?: string,
   ) {
+    const facetsCacheKey = `facets-${category || 'all'}-${subs || 'none'}`;
+    const now = Date.now();
+    if (this.facetsCache.has(facetsCacheKey)) {
+      const cached = this.facetsCache.get(facetsCacheKey)!;
+      if (now - cached.timestamp < this.CACHE_TTL) {
+        return cached.data;
+      }
+    }
+
     const isAllProducts = !category || category.toLowerCase() === 'all-products';
     if (isAllProducts && !subs) {
       const priceAgg = await (this.prisma.product as any).aggregate({
@@ -423,11 +439,13 @@ export class AwinController implements OnApplicationBootstrap {
       });
       const minVal = priceAgg._min.discountedPriceClean ?? priceAgg._min.price;
       const maxVal = priceAgg._max.discountedPriceClean ?? priceAgg._max.price;
-      return {
+      const allProductsFacets = {
         sizes: [], colors: [], materials: [], merchants: [],
         priceMin: Math.floor(minVal ?? 0),
         priceMax: Math.ceil(maxVal ?? 0),
       };
+      this.facetsCache.set(facetsCacheKey, { data: allProductsFacets, timestamp: now });
+      return allProductsFacets;
     }
 
     const where: any = {};
@@ -595,7 +613,7 @@ export class AwinController implements OnApplicationBootstrap {
     const minPriceVal = priceAgg._min.discountedPriceClean ?? priceAgg._min.price;
     const maxPriceVal = priceAgg._max.discountedPriceClean ?? priceAgg._max.price;
 
-    return {
+    const facetsResult = {
       sizes: sizes.map((s: any) => s.sizeStockStatusClean).filter(Boolean),
       colors: colors.map((c: any) => c.colourClean).filter(Boolean),
       materials: materials.map((m: any) => m.productModelClean).filter(Boolean),
@@ -603,6 +621,14 @@ export class AwinController implements OnApplicationBootstrap {
       priceMin: minPriceVal ?? 0,
       priceMax: maxPriceVal ?? 0,
     };
+
+    if (this.facetsCache.size >= this.MAX_CACHE_SIZE) {
+      const oldestKey = this.facetsCache.keys().next().value;
+      if (oldestKey) this.facetsCache.delete(oldestKey);
+    }
+    this.facetsCache.set(facetsCacheKey, { data: facetsResult, timestamp: now });
+
+    return facetsResult;
   }
 
   @Get('products')
@@ -1219,7 +1245,8 @@ export class AwinController implements OnApplicationBootstrap {
   async deleteProduct(@Param('id') id: string) {
     await this.prisma.productColorVariant.deleteMany({ where: { productId: id } });
     const result = await this.prisma.product.delete({ where: { id } });
-    this.productsCache.clear(); // Clear cache to reflect deletion
+    this.productsCache.clear();
+    this.facetsCache.clear();
     return result;
   }
 
@@ -1243,7 +1270,8 @@ export class AwinController implements OnApplicationBootstrap {
       where: { id: { in: productIds } }
     });
     
-    this.productsCache.clear(); // Clear cache to reflect deletions
+    this.productsCache.clear();
+    this.facetsCache.clear();
     return result;
   }
   @Post('products/bulk-delete')
@@ -1283,6 +1311,7 @@ export class AwinController implements OnApplicationBootstrap {
     }
 
     this.productsCache.clear();
+    this.facetsCache.clear();
     return { deleted: ids.length };
   }
 
@@ -1291,6 +1320,7 @@ export class AwinController implements OnApplicationBootstrap {
   async deduplicate() {
     const result = await this.awinService.deduplicateProducts();
     this.productsCache.clear();
+    this.facetsCache.clear();
     return result;
   }
 
