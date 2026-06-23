@@ -18,9 +18,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
     const pool = new Pool({
       connectionString: url,
-      max: 5,
+      max: 15,
       idleTimeoutMillis: 60000,
-      connectionTimeoutMillis: 30000,
+      connectionTimeoutMillis: 60000,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,
     });

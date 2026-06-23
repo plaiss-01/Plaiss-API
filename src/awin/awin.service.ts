@@ -21,7 +21,7 @@ export class AwinService {
     dev: 'AWIN_AFFILIAT_PRODUCTS_DATA_DEV',
     prod: 'AWIN_AFFILIAT_PRODUCTS_DATA_PROD',
   };
-  private readonly rawInsertBatchSize = 500;
+  private readonly rawInsertBatchSize = 100;
   private readonly validSizeLabels = new Set([
     '1 Seater',
     '2 Seater',
