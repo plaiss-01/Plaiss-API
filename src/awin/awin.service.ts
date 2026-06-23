@@ -21,6 +21,7 @@ export class AwinService {
     dev: 'AWIN_AFFILIAT_PRODUCTS_DATA_DEV',
     prod: 'AWIN_AFFILIAT_PRODUCTS_DATA_PROD',
   };
+  private extractionRunning = false;
   private readonly rawInsertBatchSize = 100;
   private readonly validSizeLabels = new Set([
     '1 Seater',
@@ -371,12 +372,24 @@ export class AwinService {
   }
 
   async extractAwinFeedToRaw(url: string, jobId?: string, replace = true) {
+    if (this.extractionRunning) {
+      throw new Error('An AWIN extraction is already running. Please wait for it to complete.');
+    }
+    this.extractionRunning = true;
+    try {
+      return await this._extractAwinFeedToRaw(url, jobId, replace);
+    } finally {
+      this.extractionRunning = false;
+    }
+  }
+
+  private async _extractAwinFeedToRaw(url: string, jobId?: string, replace = true) {
     await this.ensureAwinPipelineTables();
 
     let startRow = 0;
     if (!replace && jobId) {
       const [{ max }] = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT MAX(row_number) as max FROM "${this.awinPipelineTables.raw}" WHERE import_job_id = $1`,
+        `SELECT MAX(row_number) as max FROM public."${this.awinPipelineTables.raw}" WHERE import_job_id = $1`,
         jobId,
       );
       startRow = Number(max) || 0;
@@ -384,7 +397,7 @@ export class AwinService {
     }
 
     if (replace) {
-      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
+      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE public."${this.awinPipelineTables.raw}"`);
     }
 
     const feedUrl = this.withAwinDownloadDefaults(url);
@@ -455,7 +468,7 @@ export class AwinService {
     await this.ensureAwinPipelineTables();
 
     if (replace) {
-      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "${this.awinPipelineTables.raw}"`);
+      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE public."${this.awinPipelineTables.raw}"`);
     }
 
     const parser = Readable.from(fileBuffer).pipe(csv.parse({ headers: true }));
@@ -803,7 +816,7 @@ export class AwinService {
 
   private async ensureAwinPipelineTables() {
     await this.prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "${this.awinPipelineTables.raw}" (
+      CREATE TABLE IF NOT EXISTS public."${this.awinPipelineTables.raw}" (
         id TEXT PRIMARY KEY,
         row_number INTEGER NOT NULL,
         source_url TEXT,
@@ -814,7 +827,7 @@ export class AwinService {
     `);
     await this.prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS "idx_awin_raw_row_number"
-       ON "${this.awinPipelineTables.raw}" (row_number)`,
+       ON public."${this.awinPipelineTables.raw}" (row_number)`,
     );
 
     await this.prisma.$executeRawUnsafe(
@@ -902,7 +915,7 @@ export class AwinService {
 
   private async insertRawAwinRow(row: any, rowNumber: number, sourceUrl: string, jobId?: string) {
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
+      `INSERT INTO public."${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
        VALUES ($1, $2, $3, $4, $5::jsonb)`,
       randomUUID(),
       rowNumber,
@@ -927,7 +940,7 @@ export class AwinService {
     });
 
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
+      `INSERT INTO public."${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
        VALUES ${placeholders.join(', ')}`,
       ...values,
     );
