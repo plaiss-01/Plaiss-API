@@ -637,12 +637,15 @@ export class AwinController implements OnApplicationBootstrap {
     }
 
     const ARTIFICIAL_TERMS = ['artificial', 'plastic', 'fake', 'faux', 'synthetic'];
+    // US-only merchants with slow image CDNs — irrelevant for UK audience
+    const EXCLUDED_MERCHANTS = ['Flowers Fast', 'encalife'];
     const where: any = {
       imageUrl: { not: null },
       NOT: { imageUrl: '' },
       AND: [
         { NOT: { OR: ARTIFICIAL_TERMS.map(t => ({ name: { contains: t, mode: 'insensitive' as const } })) } },
         { OR: [{ colourVariantNumber: 1 }, { colourVariantNumber: null }] },
+        { NOT: { OR: EXCLUDED_MERCHANTS.map(m => ({ merchant: { contains: m, mode: 'insensitive' as const } })) } },
       ],
     };
     if (search) {
