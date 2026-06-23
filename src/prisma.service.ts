@@ -7,11 +7,12 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger: Logger;
+  readonly pool: Pool;
 
   constructor(configService: ConfigService) {
     const url = configService.get<string>('DATABASE_URL');
     const logOptions = ['query', 'info', 'warn', 'error'] as const;
-    
+
     if (!url || (!url.startsWith('postgresql://') && !url.startsWith('postgres://'))) {
       throw new Error('DATABASE_URL must be a valid PostgreSQL connection string.');
     }
@@ -33,6 +34,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     super({ adapter, log: logOptions as any });
 
     this.logger = new Logger(PrismaService.name);
+    this.pool = pool;
     this.logger.log('PrismaClient initialized with PostgreSQL adapter.');
   }
 

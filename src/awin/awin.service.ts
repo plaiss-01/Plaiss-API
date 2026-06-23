@@ -371,35 +371,35 @@ export class AwinService {
   }
 
   async extractAwinFeedToRaw(url: string, jobId?: string, replace = true) {
-    // Use a Postgres advisory lock (key 778899) so only one replica can extract at a time
-    const [{ locked }] = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT pg_try_advisory_lock(778899) AS locked`,
-    );
-    if (!locked) {
-      throw new Error('An AWIN extraction is already running on another instance. Please wait for it to complete.');
-    }
+    // Use a dedicated pg client (not pool) so advisory lock, DDL, and inserts all share one session
+    const client = await this.prisma.pool.connect();
     try {
-      return await this._extractAwinFeedToRaw(url, jobId, replace);
+      const { rows: lockRows } = await client.query(`SELECT pg_try_advisory_lock(778899) AS locked`);
+      if (!lockRows[0].locked) {
+        throw new Error('An AWIN extraction is already running on another instance. Please wait for it to complete.');
+      }
+      return await this._extractAwinFeedToRaw(url, jobId, replace, client);
     } finally {
-      await this.prisma.$executeRawUnsafe(`SELECT pg_advisory_unlock(778899)`);
+      await client.query(`SELECT pg_advisory_unlock(778899)`);
+      client.release();
     }
   }
 
-  private async _extractAwinFeedToRaw(url: string, jobId?: string, replace = true) {
-    await this.ensureAwinPipelineTables();
+  private async _extractAwinFeedToRaw(url: string, jobId?: string, replace = true, client?: any) {
+    await this.ensureAwinPipelineTables(client);
 
     let startRow = 0;
     if (!replace && jobId) {
-      const [{ max }] = await this.prisma.$queryRawUnsafe<any[]>(
+      const { rows } = await client.query(
         `SELECT MAX(row_number) as max FROM public."${this.awinPipelineTables.raw}" WHERE import_job_id = $1`,
-        jobId,
+        [jobId],
       );
-      startRow = Number(max) || 0;
+      startRow = Number(rows[0]?.max) || 0;
       this.logger.log(`Resuming from row ${startRow} for job ${jobId}`);
     }
 
     if (replace) {
-      await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE public."${this.awinPipelineTables.raw}"`);
+      await client.query(`TRUNCATE TABLE public."${this.awinPipelineTables.raw}"`);
     }
 
     const feedUrl = this.withAwinDownloadDefaults(url);
@@ -441,7 +441,7 @@ export class AwinService {
       batch.push({ row, rowNumber: count });
 
       if (batch.length >= this.rawInsertBatchSize) {
-        await this.insertRawAwinRows(batch, feedUrl, jobId);
+        await this.insertRawAwinRows(batch, feedUrl, jobId, client);
         batch = [];
       }
 
@@ -451,7 +451,7 @@ export class AwinService {
     }
 
     if (batch.length > 0) {
-      await this.insertRawAwinRows(batch, feedUrl, jobId);
+      await this.insertRawAwinRows(batch, feedUrl, jobId, client);
     }
 
     if (jobId) {
@@ -816,8 +816,12 @@ export class AwinService {
     return url;
   }
 
-  private async ensureAwinPipelineTables() {
-    await this.prisma.$executeRawUnsafe(`
+  private async ensureAwinPipelineTables(client?: any) {
+    const exec = (sql: string) => client
+      ? client.query(sql)
+      : this.prisma.$executeRawUnsafe(sql);
+
+    await exec(`
       CREATE TABLE IF NOT EXISTS public."${this.awinPipelineTables.raw}" (
         id TEXT PRIMARY KEY,
         row_number INTEGER NOT NULL,
@@ -827,17 +831,13 @@ export class AwinService {
         imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await this.prisma.$executeRawUnsafe(
+    await exec(
       `CREATE INDEX IF NOT EXISTS "idx_awin_raw_row_number"
        ON public."${this.awinPipelineTables.raw}" (row_number)`,
     );
 
-    await this.prisma.$executeRawUnsafe(
-      this.createPipelineProductTableSql(this.awinPipelineTables.dev, false),
-    );
-    await this.prisma.$executeRawUnsafe(
-      this.createPipelineProductTableSql(this.awinPipelineTables.prod, true),
-    );
+    await exec(this.createPipelineProductTableSql(this.awinPipelineTables.dev, false));
+    await exec(this.createPipelineProductTableSql(this.awinPipelineTables.prod, true));
     await this.ensurePipelineProductColumns(this.awinPipelineTables.dev, false);
     await this.ensurePipelineProductColumns(this.awinPipelineTables.prod, true);
   }
@@ -931,6 +931,7 @@ export class AwinService {
     rows: Array<{ row: any; rowNumber: number }>,
     sourceUrl: string,
     jobId?: string,
+    client?: any,
   ) {
     if (rows.length === 0) return;
 
@@ -941,11 +942,14 @@ export class AwinService {
       return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}::jsonb)`;
     });
 
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO public."${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
-       VALUES ${placeholders.join(', ')}`,
-      ...values,
-    );
+    const sql = `INSERT INTO public."${this.awinPipelineTables.raw}" (id, row_number, source_url, import_job_id, raw_row)
+       VALUES ${placeholders.join(', ')}`;
+
+    if (client) {
+      await client.query(sql, values);
+    } else {
+      await this.prisma.$executeRawUnsafe(sql, ...values);
+    }
   }
 
   private mapAwinRawRowToPipelineRow(row: any) {
