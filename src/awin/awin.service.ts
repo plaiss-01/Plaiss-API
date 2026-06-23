@@ -348,8 +348,8 @@ export class AwinService {
     const schema = 'public';
     return {
       raw: `${schema}."${this.awinPipelineTables.raw}"`,
-      dev: `${schema}.public."${this.awinPipelineTables.dev}"`,
-      prod: `${schema}.public."${this.awinPipelineTables.prod}"`,
+      dev: `${schema}."${this.awinPipelineTables.dev}"`,
+      prod: `${schema}."${this.awinPipelineTables.prod}"`,
       note: 'RAW is the direct AWIN extraction table, DEV is transformed for review, and PROD is the reviewed table Plaiss should read from.',
     };
   }
