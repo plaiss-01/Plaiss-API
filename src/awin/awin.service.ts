@@ -21,7 +21,6 @@ export class AwinService {
     dev: 'AWIN_AFFILIAT_PRODUCTS_DATA_DEV',
     prod: 'AWIN_AFFILIAT_PRODUCTS_DATA_PROD',
   };
-  private extractionRunning = false;
   private readonly rawInsertBatchSize = 100;
   private readonly validSizeLabels = new Set([
     '1 Seater',
@@ -372,14 +371,17 @@ export class AwinService {
   }
 
   async extractAwinFeedToRaw(url: string, jobId?: string, replace = true) {
-    if (this.extractionRunning) {
-      throw new Error('An AWIN extraction is already running. Please wait for it to complete.');
+    // Use a Postgres advisory lock (key 778899) so only one replica can extract at a time
+    const [{ locked }] = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT pg_try_advisory_lock(778899) AS locked`,
+    );
+    if (!locked) {
+      throw new Error('An AWIN extraction is already running on another instance. Please wait for it to complete.');
     }
-    this.extractionRunning = true;
     try {
       return await this._extractAwinFeedToRaw(url, jobId, replace);
     } finally {
-      this.extractionRunning = false;
+      await this.prisma.$executeRawUnsafe(`SELECT pg_advisory_unlock(778899)`);
     }
   }
 
