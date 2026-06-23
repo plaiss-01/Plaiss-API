@@ -401,8 +401,19 @@ export class AwinController {
     @Query('category') category?: string,
     @Query('subs') subs?: string,
   ) {
-    if (!category && !subs) {
-      return { sizes: [], colors: [], materials: [], priceMin: 0, priceMax: 0 };
+    const isAllProducts = !category || category.toLowerCase() === 'all-products';
+    if (isAllProducts && !subs) {
+      const priceAgg = await (this.prisma.product as any).aggregate({
+        _min: { discountedPriceClean: true, price: true },
+        _max: { discountedPriceClean: true, price: true },
+      });
+      const minVal = priceAgg._min.discountedPriceClean ?? priceAgg._min.price;
+      const maxVal = priceAgg._max.discountedPriceClean ?? priceAgg._max.price;
+      return {
+        sizes: [], colors: [], materials: [], merchants: [],
+        priceMin: Math.floor(minVal ?? 0),
+        priceMax: Math.ceil(maxVal ?? 0),
+      };
     }
 
     const where: any = {};
