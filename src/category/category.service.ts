@@ -11,7 +11,7 @@ export class CategoryService {
     childrenMap: Map<string, any[]>,
     timestamp: number 
   } | null = null;
-  private readonly CACHE_TTL = 30000; // 30 seconds for category structure
+  private readonly CACHE_TTL = 300000; // 5 minutes for category structure
 
   async getCategoryStructure() {
     const now = Date.now();

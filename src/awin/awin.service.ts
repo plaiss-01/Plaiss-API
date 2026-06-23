@@ -241,8 +241,6 @@ export class AwinService {
         response.headers['content-encoding'] === 'gzip' ||
         url.endsWith('.gz');
 
-      let count = 0;
-
       let parserStream: any = stream;
       if (isGzip) {
         parserStream = stream.pipe(zlib.createGunzip());

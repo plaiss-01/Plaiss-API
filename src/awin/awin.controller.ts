@@ -664,8 +664,6 @@ export class AwinController implements OnApplicationBootstrap {
         c.name.toLowerCase() === category.toLowerCase()
       );
 
-;
-
       const getDescendantIds = (catId: string, visited = new Set<string>()): string[] => {
         if (visited.has(catId)) return [];
         visited.add(catId);
@@ -739,13 +737,6 @@ export class AwinController implements OnApplicationBootstrap {
       // FALLBACK LOGIC: If we found target categories but they have 0 products (check via pre-calculated count if possible, or just prepare OR)
       // Actually, it's better to do this after the query if total is 0. 
       // But we can also proactively add parents if the user wants "combination... if not available then use main".
-
-      // Let's stick to the current plan: 
-      // 1. Unique IDs/Names from the target and its descendants.
-      // 2. If the query returns 0, we will check parents in the fallback section.
-
-
-;
 
       where.OR = [
         { categoryRel: { id: { in: uniqueIds } } },
@@ -985,7 +976,7 @@ export class AwinController implements OnApplicationBootstrap {
                 }
               }),
             ]);
-            return { data: fallbackData, total: fallbackTotal, page: p, totalPages: Math.ceil(fallbackTotal / l) };
+            return { data: fallbackData.map((prod: any) => this.enhanceProductImages(prod)), meta: { total: fallbackTotal, page: p, limit: l, totalPages: Math.ceil(fallbackTotal / l) } };
           }
         }
       }
@@ -1102,19 +1093,6 @@ export class AwinController implements OnApplicationBootstrap {
     });
 
     const memo = new Map<string, number>();
-
-    // 3. Pre-calculate deep counts iteratively (bottom-up is better, but this single-pass recursive with memo is okay)
-    // Actually, let's do a proper iterative pre-calculation for maximum speed
-    const calculateAllCounts = () => {
-      // Initialize with direct counts using category name!
-      allCategories.forEach(cat => {
-        memo.set(cat.id, countMap[cat.name] || 0);
-      });
-
-      // Simple way: multiple passes or a topological sort. 
-      // But for 40k items, let's use a faster approach: 
-      // Group by depth or just build parent-child relations and use a recursive memoized function.
-    };
 
     const getDeepCount = (catId: string, visited = new Set<string>()): number => {
       if (visited.has(catId)) return 0;

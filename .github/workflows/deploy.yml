@@ -1,9 +1,9 @@
-name: Build and Deploy to EKS
+name: Build and Deploy to Azure Container Apps
 
 on:
   push:
     branches:
-      - main
+      - azure-migration
 
 jobs:
   deploy:
@@ -13,58 +13,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Azure Login
+        uses: azure/login@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build and push image to ACR
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          az acr build \
+            --registry acrplaissuk \
+            --image plaiss-api:${{ github.sha }} \
+            --file Dockerfile \
+            .
 
-      - name: Update kubeconfig
+      - name: Get image digest
+        id: digest
         run: |
-          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
+          DIGEST=$(az acr repository show-manifests \
+            --name acrplaissuk \
+            --repository plaiss-api \
+            --orderby time_desc \
+            --top 1 \
+            --query "[0].digest" \
+            --output tsv)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
-      - name: Sync environment variables to Kubernetes
+      - name: Deploy new revision to Container App
         run: |
-          kubectl create secret generic plaiss-api-secrets \
-            --from-literal=DATABASE_URL="postgresql://eraadmin:${{ secrets.DB_PASSWORD }}@127.0.0.1:5432/eraofmarketing?schema=public" \
-            --from-literal=PORT="${{ secrets.PORT }}" \
-            --from-literal=S3_REGION="${{ secrets.S3_REGION }}" \
-            --from-literal=S3_BUCKET="${{ secrets.S3_BUCKET }}" \
-            --from-literal=REKOGNITION_REGION="${{ secrets.REKOGNITION_REGION }}" \
-            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.S3_ACCESS_KEY_ID }}" \
-            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.S3_SECRET_ACCESS_KEY }}" \
-            --namespace=dev \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Deploy to EKS
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          kubectl set image deployment/plaiss-api plaiss-api=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -n dev
-          kubectl rollout status deployment/plaiss-api -n dev --timeout=120s
-
-      - name: Rollback on failure
-        if: failure()
-        run: |
-          echo "Deployment failed - rolling back to previous version"
-          kubectl rollout undo deployment/plaiss-api -n dev
-          kubectl rollout status deployment/plaiss-api -n dev --timeout=60s
-          echo "Rollback complete"
+          az containerapp update \
+            --name plaiss-api \
+            --resource-group rg-plaiss-uk \
+            --image acrplaissuk.azurecr.io/plaiss-api@${{ steps.digest.outputs.digest }} \
+            --revision-suffix gh-${{ github.run_number }}
