@@ -212,7 +212,10 @@ export class AwinController implements OnApplicationBootstrap {
       image: img,
       images: img ? [img] : [],
       colorVariants: product.colorVariants || [],
-      colors: product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : [],
+      colors: (() => {
+        const colorName = product.colour || product.colourClean || null;
+        return colorName ? [{ name: colorName, hex: colorName, imageUrl: img, productUrl: product.productUrl }] : [];
+      })(),
       normalizedAttributes: {},
       deliveryTime,
     };
