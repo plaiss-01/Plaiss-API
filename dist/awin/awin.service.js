@@ -1647,7 +1647,7 @@ let AwinService = AwinService_1 = class AwinService {
         allProducts.forEach((p) => {
             let coreName = p.name
                 .toLowerCase()
-                .replace(/\b(red|blue|green|black|white|grey|gray|yellow|pink|purple|brown|beige|cream|teal|navy|charcoal|silver|gold|orange)\b/gi, '')
+                .replace(/\b(red|blue|green|black|white|grey|gray|yellow|pink|purple|brown|beige|cream|teal|navy|charcoal|silver|gold|orange|mocha|tan|saddle|ash|stone|latte|azul|slate|chalk|pistachio|amber|copper|brass|bronze|opal|bordeaux|rust|plum|burgundy|terracotta|mint|ivory|espresso|chocolate|khaki|denim|natural|steel|taupe|sand|ochre|mustard|emerald|sage|olive)\b/gi, '')
                 .replace(/\s+/g, ' ')
                 .trim();
             if (coreName.length < 5)
@@ -1693,15 +1693,14 @@ let AwinService = AwinService_1 = class AwinService {
             const master = sorted[0];
             const variants = sorted.slice(1);
             const seenColors = new Set();
-            const masterColor = master.colour || master.name.split(' ').find((word) => ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase()));
+            const masterColor = master.colour || master.name.split(' ').find((word) => ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange', 'mocha', 'tan', 'saddle', 'ash', 'stone', 'latte', 'azul', 'slate', 'chalk', 'pistachio', 'amber', 'copper', 'brass', 'bronze', 'opal', 'bordeaux', 'rust', 'plum', 'burgundy', 'terracotta', 'mint', 'ivory', 'espresso', 'chocolate', 'khaki', 'denim', 'natural', 'steel', 'taupe', 'sand', 'ochre', 'mustard', 'emerald', 'sage', 'olive'].includes(word.toLowerCase()));
             if (masterColor)
                 seenColors.add(masterColor.toLowerCase());
             for (const v of variants) {
-                const colorName = v.colour || v.name.split(' ').find((word) => ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase())) || 'Original';
+                const colorName = v.colour || v.name.split(' ').find((word) => ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange', 'mocha', 'tan', 'saddle', 'ash', 'stone', 'latte', 'azul', 'slate', 'chalk', 'pistachio', 'amber', 'copper', 'brass', 'bronze', 'opal', 'bordeaux', 'rust', 'plum', 'burgundy', 'terracotta', 'mint', 'ivory', 'espresso', 'chocolate', 'khaki', 'denim', 'natural', 'steel', 'taupe', 'sand', 'ochre', 'mustard', 'emerald', 'sage', 'olive'].includes(word.toLowerCase())) || 'Original';
                 const colorKey = colorName.toLowerCase();
                 batchDeletes.push(v.id);
                 mergedCount++;
-                variantCount++;
                 if (seenColors.has(colorKey)) {
                     if (batchDeletes.length >= BATCH_SIZE) {
                         await flushBatches(batchInserts, batchDeletes);
@@ -1737,10 +1736,8 @@ let AwinService = AwinService_1 = class AwinService {
                 }
                 const finalImage = bestImage.includes('noimage.gif') ? null : bestImage;
                 batchInserts.push([master.id, colorName, finalImage, v.productUrl || '', v.id]);
-                batchDeletes.push(v.id);
-                mergedCount++;
                 variantCount++;
-                if (batchInserts.length >= BATCH_SIZE) {
+                if (batchInserts.length >= BATCH_SIZE || batchDeletes.length >= BATCH_SIZE) {
                     await flushBatches(batchInserts, batchDeletes);
                     this.logger.log(`Merged ${mergedCount} products...`);
                     batchInserts = [];
@@ -1753,6 +1750,52 @@ let AwinService = AwinService_1 = class AwinService {
         }
         this.logger.log(`Deduplication complete. Merged ${mergedCount} products into variants.`);
         return { mergedCount, variantCount };
+    }
+    async getHomepageProducts() {
+        const selected = await this.prisma.homepageProduct.findMany({
+            select: { productId: true }
+        });
+        const productIds = selected.map((s) => s.productId);
+        if (productIds.length === 0) {
+            return [];
+        }
+        const products = await this.prisma.product.findMany({
+            where: { id: { in: productIds } },
+            include: {
+                colorVariants: {
+                    select: {
+                        id: true,
+                        colorName: true,
+                        imageUrl: true,
+                        productUrl: true,
+                        awinId: true,
+                    }
+                }
+            }
+        });
+        return products;
+    }
+    async addHomepageProduct(productId) {
+        try {
+            const created = await this.prisma.homepageProduct.create({
+                data: { productId }
+            });
+            return { success: true, data: created };
+        }
+        catch (e) {
+            return { success: false, message: e.message };
+        }
+    }
+    async removeHomepageProduct(productId) {
+        try {
+            await this.prisma.homepageProduct.delete({
+                where: { productId }
+            });
+            return { success: true };
+        }
+        catch (e) {
+            return { success: false, message: e.message };
+        }
     }
 };
 exports.AwinService = AwinService;

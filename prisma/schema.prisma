@@ -159,4 +159,10 @@ model ProductColorVariant {
   product    Product @relation(fields: [productId], references: [id])
 }
 
+model HomepageProduct {
+  id        String   @id @default(cuid())
+  productId String   @unique @map("product_id")
+  createdAt DateTime @default(now()) @map("created_at")
 
+  @@map("homepage_products")
+}

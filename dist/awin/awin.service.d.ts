@@ -103,4 +103,21 @@ export declare class AwinService {
         mergedCount: number;
         variantCount: number;
     }>;
+    getHomepageProducts(): Promise<any>;
+    addHomepageProduct(productId: string): Promise<{
+        success: boolean;
+        data: any;
+        message?: undefined;
+    } | {
+        success: boolean;
+        message: any;
+        data?: undefined;
+    }>;
+    removeHomepageProduct(productId: string): Promise<{
+        success: boolean;
+        message?: undefined;
+    } | {
+        success: boolean;
+        message: any;
+    }>;
 }

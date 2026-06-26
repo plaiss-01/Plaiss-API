@@ -8,101 +8,82 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  console.log('Starting Power Deduplication (Name Similarity)...');
+  console.log('Starting Power Deduplication with Expanded Colors...');
+
+  const tableName = '"AWIN_AFFILIAT_PRODUCTS_DATA_PROD"';
 
   // 1. First, populate the "colour" field from the name for products where it's missing
   console.log('Step 1: Extracting colors from names...');
   const colors = [
     'Grey', 'Gray', 'Cream', 'Blue', 'Navy', 'Black', 'White', 'Red', 'Green', 'Yellow', 
-    'Pink', 'Purple', 'Orange', 'Brown', 'Beige', 'Teal', 'Silver', 'Gold', 'Charcoal', 'Anthracite'
+    'Pink', 'Purple', 'Orange', 'Brown', 'Beige', 'Teal', 'Silver', 'Gold', 'Charcoal', 'Anthracite',
+    'Natural', 'Steel', 'Taupe', 'Sand', 'Ochre', 'Mustard', 'Emerald', 'Sage', 'Olive',
+    'Mocha', 'Tan', 'Saddle', 'Ash', 'Stone', 'Latte', 'Azul', 'Slate', 'Chalk', 'Pistachio', 'Amber', 'Copper', 'Brass', 'Bronze', 'Opal', 'Bordeaux', 'Rust', 'Plum', 'Burgundy', 'Terracotta', 'Mint', 'Ivory', 'Espresso', 'Chocolate', 'Khaki', 'Denim'
   ];
 
   for (const color of colors) {
     await prisma.$executeRawUnsafe(`
-      UPDATE "Product"
+      UPDATE ${tableName}
       SET "colour" = '${color}'
       WHERE ("colour" IS NULL OR "colour" = '')
-      AND "name" ~* '\\y${color}\\y'
+      AND "product_name" ~* '\\y${color}\\y'
     `);
   }
 
-  // Debug query to see if Owenton products are grouped
-  const debugSql = `
-    WITH groups AS (
-      SELECT 
-        MIN(id) as primary_id,
-        TRIM(BOTH ' -_' FROM 
-          REGEXP_REPLACE(
-            REGEXP_REPLACE(LOWER(name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
-            '', 
-            'gi'
-          )
-        ) as base_name,
-        "brandName",
-        "merchant",
-        COUNT(*) as count
-      FROM "Product"
-      GROUP BY base_name, "brandName", "merchant"
-      HAVING COUNT(*) > 1
-    )
-    SELECT * FROM groups WHERE base_name ~* 'owenton';
-  `;
-  const debugResults = await prisma.$queryRawUnsafe(debugSql);
-  console.log('Debug Results (Owenton):', debugResults);
-
-  // 2. Now run the smart base name deduplication again
+  // 2. Now run the smart base name deduplication
   console.log('Step 2: Grouping by smart base names...');
+  
+  // Expanded color regex string
+  const colorRegex = 'grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite|natural|steel|taupe|sand|ochre|mustard|emerald|sage|olive|mocha|tan|saddle|ash|stone|latte|azul|slate|chalk|pistachio|amber|copper|brass|bronze|opal|bordeaux|rust|plum|burgundy|terracotta|mint|ivory|espresso|chocolate|khaki|denim';
+
   const dedupSql = `
     WITH groups AS (
       SELECT 
-        MIN(id) as primary_id,
+        MIN("aw_product_id") as primary_id,
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
-            REGEXP_REPLACE(LOWER(name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
+            REGEXP_REPLACE(LOWER("product_name"), '\\y(in|with|color|colour)\\y', '', 'g'),
+            '\\y(${colorRegex})\\y', 
             '', 
             'gi'
           )
         ) as base_name,
-        "brandName",
-        "merchant"
-      FROM "Product"
-      GROUP BY base_name, "brandName", "merchant"
+        "brand_name",
+        "merchant_name"
+      FROM ${tableName}
+      GROUP BY base_name, "brand_name", "merchant_name"
       HAVING COUNT(*) > 1
     ),
     variants AS (
-      SELECT p.id, p."colour", p."imageUrl", p."productUrl", p.id as "awinId", g.primary_id, p.name
-      FROM "Product" p
+      SELECT p."aw_product_id" as "id", p."colour", p."image_url", p."product_url", p."aw_product_id" as "awinId", g.primary_id, p."product_name" as "name"
+      FROM ${tableName} p
       JOIN groups g ON 
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
-            REGEXP_REPLACE(LOWER(p.name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
+            REGEXP_REPLACE(LOWER(p."product_name"), '\\y(in|with|color|colour)\\y', '', 'g'),
+            '\\y(${colorRegex})\\y', 
             '', 
             'gi'
           )
         ) = g.base_name
-        AND (p."brandName" = g."brandName" OR (p."brandName" IS NULL AND g."brandName" IS NULL))
-        AND p."merchant" = g."merchant"
-      WHERE p.id != g.primary_id
+        AND (p."brand_name" = g."brand_name" OR (p."brand_name" IS NULL AND g."brand_name" IS NULL))
+        AND p."merchant_name" = g."merchant_name"
+      WHERE p."aw_product_id" != g.primary_id
     )
-    INSERT INTO "ProductColorVariant" ("id", "productId", "colorName", "imageUrl", "productUrl", "awinId", "createdAt", "updatedAt")
+    INSERT INTO "ProductColorVariant" ("id", "product_id", "color_name", "image_url", "product_url", "awin_id")
     SELECT 
-      gen_random_uuid(), 
+      gen_random_uuid()::text, 
       primary_id, 
       COALESCE("colour", 
         CASE 
-          WHEN name ~* '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y'
-          THEN REGEXP_REPLACE(name, '.*\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y.*', '\\1', 'gi')
+          WHEN "name" ~* '\\y(${colorRegex})\\y'
+          THEN REGEXP_REPLACE("name", '.*\\y(${colorRegex})\\y.*', '\\1', 'gi')
           ELSE 'Unknown'
         END
       ), 
-      "imageUrl", 
-      "productUrl", 
-      "awinId",
-      NOW(),
-      NOW()
+      "image_url", 
+      "product_url", 
+      "awinId"
     FROM variants
     ON CONFLICT DO NOTHING;
   `;
@@ -110,37 +91,37 @@ async function main() {
   const deleteSql = `
     WITH groups AS (
       SELECT 
-        MIN(id) as primary_id,
+        MIN("aw_product_id") as primary_id,
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
-            REGEXP_REPLACE(LOWER(name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
+            REGEXP_REPLACE(LOWER("product_name"), '\\y(in|with|color|colour)\\y', '', 'g'),
+            '\\y(${colorRegex})\\y', 
             '', 
             'gi'
           )
         ) as base_name,
-        "brandName",
-        "merchant"
-      FROM "Product"
-      GROUP BY base_name, "brandName", "merchant"
+        "brand_name",
+        "merchant_name"
+      FROM ${tableName}
+      GROUP BY base_name, "brand_name", "merchant_name"
       HAVING COUNT(*) > 1
     )
-    DELETE FROM "Product"
-    WHERE id IN (
-      SELECT p.id
-      FROM "Product" p
+    DELETE FROM ${tableName}
+    WHERE "aw_product_id" IN (
+      SELECT p."aw_product_id"
+      FROM ${tableName} p
       JOIN groups g ON 
         TRIM(BOTH ' -_' FROM 
           REGEXP_REPLACE(
-            REGEXP_REPLACE(LOWER(p.name), '\\y(in|with|color|colour)\\y', '', 'g'),
-            '\\y(grey|gray|cream|blue|navy|black|white|red|green|yellow|pink|purple|orange|brown|beige|teal|silver|gold|charcoal|anthracite)\\y', 
+            REGEXP_REPLACE(LOWER(p."product_name"), '\\y(in|with|color|colour)\\y', '', 'g'),
+            '\\y(${colorRegex})\\y', 
             '', 
             'gi'
           )
         ) = g.base_name
-        AND (p."brandName" = g."brandName" OR (p."brandName" IS NULL AND g."brandName" IS NULL))
-        AND p."merchant" = g."merchant"
-      WHERE p.id != g.primary_id
+        AND (p."brand_name" = g."brand_name" OR (p."brand_name" IS NULL AND g."brand_name" IS NULL))
+        AND p."merchant_name" = g."merchant_name"
+      WHERE p."aw_product_id" != g.primary_id
     );
   `;
 
@@ -153,4 +134,12 @@ async function main() {
   console.log('Deduplication complete!');
 }
 
-main().finally(() => prisma.$disconnect());
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+    await pool.end();
+  });

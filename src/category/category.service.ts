@@ -49,6 +49,7 @@ export class CategoryService {
 
   async create(data: { name: string; parentId?: string; isAwin?: boolean }) {
     const slug = this.slugify(data.name);
+    const targetIsAwin = data.isAwin !== undefined ? data.isAwin : false;
     
     // Check if category already exists by name or slug
     const existing = await this.prisma.category.findFirst({
@@ -60,14 +61,29 @@ export class CategoryService {
       },
     });
     if (existing) {
+      if (!targetIsAwin && existing.isAwin) {
+        const updated = await this.prisma.category.update({
+          where: { id: existing.id },
+          data: {
+            isAwin: false,
+            parentId: data.parentId || existing.parentId,
+          },
+          include: {
+            children: true,
+            parent: true,
+          },
+        });
+        this.clearCache();
+        return updated;
+      }
       throw new ConflictException(`Category with name "${data.name}" or slug "${slug}" already exists.`);
     }
 
-    return this.prisma.category.create({
+    const created = await this.prisma.category.create({
       data: {
         name: data.name,
         slug,
-        isAwin: data.isAwin !== undefined ? data.isAwin : false, // Default to false for manual
+        isAwin: targetIsAwin,
         parentId: data.parentId || null,
       },
       include: {
@@ -75,6 +91,8 @@ export class CategoryService {
         parent: true,
       },
     });
+    this.clearCache();
+    return created;
   }
 
   async findAll(isAwin?: boolean, search?: string, limit: number = 100000, parentId?: string | null) {

@@ -52,6 +52,7 @@ let CategoryService = class CategoryService {
     }
     async create(data) {
         const slug = this.slugify(data.name);
+        const targetIsAwin = data.isAwin !== undefined ? data.isAwin : false;
         const existing = await this.prisma.category.findFirst({
             where: {
                 OR: [
@@ -61,13 +62,28 @@ let CategoryService = class CategoryService {
             },
         });
         if (existing) {
+            if (!targetIsAwin && existing.isAwin) {
+                const updated = await this.prisma.category.update({
+                    where: { id: existing.id },
+                    data: {
+                        isAwin: false,
+                        parentId: data.parentId || existing.parentId,
+                    },
+                    include: {
+                        children: true,
+                        parent: true,
+                    },
+                });
+                this.clearCache();
+                return updated;
+            }
             throw new common_1.ConflictException(`Category with name "${data.name}" or slug "${slug}" already exists.`);
         }
-        return this.prisma.category.create({
+        const created = await this.prisma.category.create({
             data: {
                 name: data.name,
                 slug,
-                isAwin: data.isAwin !== undefined ? data.isAwin : false,
+                isAwin: targetIsAwin,
                 parentId: data.parentId || null,
             },
             include: {
@@ -75,6 +91,8 @@ let CategoryService = class CategoryService {
                 parent: true,
             },
         });
+        this.clearCache();
+        return created;
     }
     async findAll(isAwin, search, limit = 100000, parentId) {
         const where = {};

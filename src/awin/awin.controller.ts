@@ -101,29 +101,7 @@ export class AwinController {
     return '';
   }
 
-  private normalizeProductImageUrl(value?: string | null, size: number = 900): string {
-    if (!this.isUsableImageValue(value)) return '';
-
-    const secureValue = value.trim().replace(/^http:\/\//i, 'https://');
-    try {
-      const parsed = new URL(secureValue);
-      if (parsed.hostname.includes('productserve.com')) {
-        const directSource = this.decodeProductServeSource(parsed.searchParams.get('url'));
-        if (directSource) return directSource;
-
-        parsed.searchParams.set('w', String(size));
-        parsed.searchParams.set('h', String(size));
-        if (!parsed.searchParams.has('bg')) parsed.searchParams.set('bg', 'white');
-        if (!parsed.searchParams.has('t')) parsed.searchParams.set('t', 'letterbox');
-        return parsed.toString();
-      }
-      return secureValue;
-    } catch {
-      return secureValue;
-    }
-  }
-
-  private getBestProductImage(product: any): string {
+  private getAllProductImageCandidates(product: any, size: number = 900): string[] {
     let rawData: any = {};
     if (product.rawRow) {
       try {
@@ -133,9 +111,11 @@ export class AwinController {
       }
     }
 
-    const candidates = [
+    const rawCandidates = [
       product?.largeImage,
       product?.imageUrl,
+      product?.image,
+      rawData.large_image,
       rawData.alternate_image,
       rawData.alternate_image_two,
       rawData.alternate_image_three,
@@ -145,15 +125,58 @@ export class AwinController {
       rawData.merchant_thumb_url,
       product?.merchantThumbUrl,
       product?.awThumbUrl,
+      rawData.aw_thumb_url,
     ];
 
-    for (const candidate of candidates) {
-      const image = this.normalizeProductImageUrl(candidate);
-      if (image && !image.includes('noimage.gif')) return image;
+    if (Array.isArray(product?.images)) {
+      rawCandidates.push(...product.images);
     }
 
-    // Fallback to the first candidate if all fail (or return empty)
-    return candidates[0] || '';
+    const candidates: string[] = [];
+
+    const addUnique = (val?: string | null) => {
+      if (!this.isUsableImageValue(val)) return;
+      const secure = val.trim().replace(/^http:\/\//i, 'https://');
+      if (secure.includes('noimage.gif')) return;
+      if (!candidates.includes(secure)) {
+        candidates.push(secure);
+      }
+    };
+
+    const merchantId = rawData?.merchant_id || product?.merchantId || '3353';
+    const productId = rawData?.aw_product_id || product?.awinId || product?.id || '12345';
+
+    for (const source of rawCandidates) {
+      if (!this.isUsableImageValue(source)) continue;
+      const secureSource = source.trim().replace(/^http:\/\//i, 'https://');
+      try {
+        const parsed = new URL(secureSource);
+        if (parsed.hostname.includes('productserve.com')) {
+          parsed.searchParams.set('w', String(size));
+          parsed.searchParams.set('h', String(size));
+          if (!parsed.searchParams.has('bg')) parsed.searchParams.set('bg', 'white');
+          if (!parsed.searchParams.has('t')) parsed.searchParams.set('t', 'letterbox');
+          addUnique(parsed.toString());
+
+          const directSource = this.decodeProductServeSource(parsed.searchParams.get('url'));
+          addUnique(directSource);
+          if (directSource && !directSource.includes('productserve.com') && !directSource.includes('wsrv.nl')) {
+            addUnique(`https://wsrv.nl/?url=${encodeURIComponent(directSource)}&w=${size}&output=webp`);
+          }
+        } else if (parsed.hostname.includes('wsrv.nl')) {
+          addUnique(secureSource);
+        } else {
+          addUnique(secureSource);
+          addUnique(`https://images.productserve.com/preview/${merchantId}/${productId}.jpg?w=${size}&h=${size}&bg=white&t=letterbox&url=${encodeURIComponent(secureSource)}`);
+          addUnique(`https://images2.productserve.com/preview/${merchantId}/${productId}.jpg?w=${size}&h=${size}&bg=white&t=letterbox&url=${encodeURIComponent(secureSource)}`);
+          addUnique(`https://wsrv.nl/?url=${encodeURIComponent(secureSource)}&w=${size}&output=webp`);
+        }
+      } catch {
+        addUnique(secureSource);
+      }
+    }
+
+    return candidates;
   }
 
   private normalizeDeliveryTime(raw: string): string {
@@ -168,7 +191,8 @@ export class AwinController {
   private enhanceProductImages(product: any) {
     if (!product) return product;
 
-    const img = this.getBestProductImage(product);
+    const allImages = this.getAllProductImageCandidates(product);
+    const img = allImages[0] || '';
 
     let rawData: any = {};
     if (product.rawRow) {
@@ -190,7 +214,7 @@ export class AwinController {
       ...product,
       imageUrl: img,
       image: img,
-      images: img ? [img] : [],
+      images: allImages,
       colorVariants: product.colorVariants || [],
       colors: product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : [],
       normalizedAttributes: {},
@@ -1230,4 +1254,22 @@ export class AwinController {
     return result;
   }
 
+  @Get('homepage-products')
+  @ApiOperation({ summary: 'Get all products selected for homepage' })
+  async getHomepageProducts() {
+    const products = await this.awinService.getHomepageProducts();
+    return products.map((p: any) => this.enhanceProductImages(p));
+  }
+
+  @Post('homepage-products/:productId')
+  @ApiOperation({ summary: 'Add a product to homepage' })
+  async addHomepageProduct(@Param('productId') productId: string) {
+    return this.awinService.addHomepageProduct(productId);
+  }
+
+  @Delete('homepage-products/:productId')
+  @ApiOperation({ summary: 'Remove a product from homepage' })
+  async removeHomepageProduct(@Param('productId') productId: string) {
+    return this.awinService.removeHomepageProduct(productId);
+  }
 }
