@@ -2088,23 +2088,35 @@ export class AwinService {
     });
     const productIds = selected.map((s: any) => s.productId);
 
+    const colorVariantsInclude = {
+      colorVariants: {
+        select: { id: true, colorName: true, imageUrl: true, productUrl: true, awinId: true }
+      }
+    };
+
     if (productIds.length === 0) {
-      return [];
+      // Fallback: 11 sofas + 1 lighting product
+      const [sofas, lighting] = await Promise.all([
+        this.prisma.product.findMany({
+          where: { category: { contains: 'sofa', mode: 'insensitive' }, imageUrl: { not: null } },
+          include: colorVariantsInclude,
+          take: 15,
+        }),
+        this.prisma.product.findMany({
+          where: { category: { contains: 'light', mode: 'insensitive' }, imageUrl: { not: null } },
+          include: colorVariantsInclude,
+          take: 5,
+        }),
+      ]);
+      const sofaPool = sofas.slice(0, 15) as any[];
+      const light = (lighting as any[])[0];
+      if (light) sofaPool.splice(5, 0, light);
+      return sofaPool.slice(0, 12);
     }
 
     const products = await (this.prisma as any).product.findMany({
       where: { id: { in: productIds } },
-      include: {
-        colorVariants: {
-          select: {
-            id: true,
-            colorName: true,
-            imageUrl: true,
-            productUrl: true,
-            awinId: true,
-          }
-        }
-      }
+      include: colorVariantsInclude,
     });
 
     return products;
