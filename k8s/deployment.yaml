@@ -62,7 +62,7 @@ spec:
             cpu: 100m
             memory: 64Mi
       - name: plaiss-api
-        image: <YOUR_ECR_REPOSITORY_URL>:latest
+        image: plaissapi.azurecr.io/plaiss-api:latest
         ports:
         - containerPort: 3001
         envFrom:

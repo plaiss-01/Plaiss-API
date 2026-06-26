@@ -5,6 +5,6 @@ metadata:
 data:
   NODE_ENV: "production"
   PORT: "3001"
-  PGBOUNCER_DB_HOST: "eraofmarketing-db.cluster-cfu6wo4i8gx2.eu-north-1.rds.amazonaws.com"
-  PGBOUNCER_DB_NAME: "eraofmarketing"
-  PGBOUNCER_DB_USER: "eraadmin"
+  PGBOUNCER_DB_HOST: "pg-plaiss-uk.postgres.database.azure.com"
+  PGBOUNCER_DB_NAME: "plaiss"
+  PGBOUNCER_DB_USER: "plaissadmin"
