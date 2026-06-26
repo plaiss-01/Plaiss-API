@@ -39,18 +39,22 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
 
-      - name: Sync environment variables to Kubernetes
+      - name: Create .env file from secrets and sync to Kubernetes
         run: |
+          echo "PORT=${{ secrets.PORT || '3001' }}" > .env
+          echo "NODE_ENV=production" >> .env
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+          echo "AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" >> .env
+          echo "AZURE_STORAGE_CONTAINER=${{ secrets.AZURE_STORAGE_CONTAINER || 'uploads' }}" >> .env
+          echo "AZURE_VISION_ENDPOINT=${{ secrets.AZURE_VISION_ENDPOINT }}" >> .env
+          echo "AZURE_VISION_KEY=${{ secrets.AZURE_VISION_KEY }}" >> .env
+
           kubectl create secret generic plaiss-api-secrets \
-            --from-literal=DATABASE_URL="postgresql://eraadmin:${{ secrets.DB_PASSWORD }}@127.0.0.1:5432/eraofmarketing?schema=public" \
-            --from-literal=PORT="${{ secrets.PORT }}" \
-            --from-literal=S3_REGION="${{ secrets.S3_REGION }}" \
-            --from-literal=S3_BUCKET="${{ secrets.S3_BUCKET }}" \
-            --from-literal=REKOGNITION_REGION="${{ secrets.REKOGNITION_REGION }}" \
-            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.S3_ACCESS_KEY_ID }}" \
-            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.S3_SECRET_ACCESS_KEY }}" \
+            --from-env-file=.env \
             --namespace=dev \
             --dry-run=client -o yaml | kubectl apply -f -
+
+          rm -f .env
 
       - name: Deploy to EKS
         env:
