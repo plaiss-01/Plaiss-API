@@ -1,9 +1,10 @@
-name: Build and Deploy to Azure AKS
+name: Build and Deploy to Azure Container Apps
 
 on:
   push:
     branches:
       - main
+      - azure-migration
 
 jobs:
   deploy:
@@ -18,60 +19,30 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Login to Azure Container Registry (ACR)
-        uses: azure/docker-login@v2
-        with:
-          login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-
-      - name: Build, tag, and push image to ACR
-        env:
-          REGISTRY: ${{ secrets.REGISTRY_LOGIN_SERVER }}
-          REPOSITORY: ${{ secrets.ACR_REPOSITORY || 'plaiss-api' }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build and push image to ACR
         run: |
-          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
-          docker tag $REGISTRY/$REPOSITORY:$IMAGE_TAG $REGISTRY/$REPOSITORY:latest
-          docker push $REGISTRY/$REPOSITORY:latest
+          az acr build \
+            --registry acrplaissuk \
+            --image plaiss-api:${{ github.sha }} \
+            --file Dockerfile \
+            .
 
-      - name: Get AKS context
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ secrets.RESOURCE_GROUP }}
-          cluster-name: ${{ secrets.CLUSTER_NAME }}
-
-      - name: Create .env file from secrets and sync to Kubernetes
+      - name: Get image digest
+        id: digest
         run: |
-          echo "PORT=${{ secrets.PORT || '3001' }}" > .env
-          echo "NODE_ENV=production" >> .env
-          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
-          echo "AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" >> .env
-          echo "AZURE_STORAGE_CONTAINER=${{ secrets.AZURE_STORAGE_CONTAINER || 'uploads' }}" >> .env
-          echo "AZURE_VISION_ENDPOINT=${{ secrets.AZURE_VISION_ENDPOINT }}" >> .env
-          echo "AZURE_VISION_KEY=${{ secrets.AZURE_VISION_KEY }}" >> .env
+          DIGEST=$(az acr repository show-manifests \
+            --name acrplaissuk \
+            --repository plaiss-api \
+            --orderby time_desc \
+            --top 1 \
+            --query "[0].digest" \
+            --output tsv)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
-          kubectl create secret generic plaiss-api-secrets \
-            --from-env-file=.env \
-            --namespace=dev \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-          rm -f .env
-
-      - name: Deploy to AKS
-        env:
-          REGISTRY: ${{ secrets.REGISTRY_LOGIN_SERVER }}
-          REPOSITORY: ${{ secrets.ACR_REPOSITORY || 'plaiss-api' }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Deploy new revision to Container App
         run: |
-          kubectl set image deployment/plaiss-api plaiss-api=$REGISTRY/$REPOSITORY:$IMAGE_TAG -n dev
-          kubectl rollout status deployment/plaiss-api -n dev --timeout=120s
-
-      - name: Rollback on failure
-        if: failure()
-        run: |
-          echo "Deployment failed - rolling back to previous version"
-          kubectl rollout undo deployment/plaiss-api -n dev
-          kubectl rollout status deployment/plaiss-api -n dev --timeout=60s
-          echo "Rollback complete"
+          az containerapp update \
+            --name plaiss-api \
+            --resource-group rg-plaiss-uk \
+            --image acrplaissuk.azurecr.io/plaiss-api@${{ steps.digest.outputs.digest }} \
+            --revision-suffix gh-${{ github.run_number }}
