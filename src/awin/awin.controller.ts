@@ -192,7 +192,7 @@ export class AwinController {
     if (!product) return product;
 
     const allImages = this.getAllProductImageCandidates(product);
-    const img = allImages[0] || '';
+    const img = allImages[0] || product.imageUrl || product.image || '';
 
     let rawData: any = {};
     if (product.rawRow) {
@@ -210,12 +210,17 @@ export class AwinController {
 
     const deliveryTime = this.normalizeDeliveryTime(raw);
 
+    const colorVariants = (product.colorVariants || []).map((cv: any) => ({
+      ...cv,
+      imageUrl: cv.imageUrl ? cv.imageUrl.trim().replace(/^http:\/\//i, 'https://') : '',
+    }));
+
     return {
       ...product,
       imageUrl: img,
       image: img,
       images: allImages,
-      colorVariants: product.colorVariants || [],
+      colorVariants,
       colors: product.colour ? [{ name: product.colour, hex: product.colour, imageUrl: img, productUrl: product.productUrl }] : [],
       normalizedAttributes: {},
       deliveryTime,

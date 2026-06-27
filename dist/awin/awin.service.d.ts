@@ -59,6 +59,10 @@ export declare class AwinService {
         skipped: number;
         rawRows: number;
     }>;
+    private isUsableImageValue;
+    private decodeProductServeSource;
+    private getAllProductImageCandidates;
+    verifyAndUpdateProdImages(jobId?: string): Promise<void>;
     loadDevToProd(replace?: boolean, syncProductTable?: boolean, jobId?: string): Promise<{
         message: string;
         sourceTable: string;

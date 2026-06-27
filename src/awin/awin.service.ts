@@ -683,6 +683,212 @@ export class AwinService {
     return result;
   }
 
+  private isUsableImageValue(value?: string | null): value is string {
+    if (!value) return false;
+    const trimmed = value.trim();
+    return !!trimmed && !/^(?:n\/?a|na|none|null|undefined|no\s+image(?:\s+available)?|image\s+(?:not\s+)?available|not\s+available|missing|-+)$/i.test(trimmed);
+  }
+
+  private decodeProductServeSource(value?: string | null): string {
+    if (!value) return '';
+
+    let decoded = value.trim();
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break;
+        decoded = next;
+      } catch {
+        break;
+      }
+    }
+
+    if (/^ssl:/i.test(decoded)) {
+      return `https://${decoded.replace(/^ssl:\/?/i, '').replace(/^\/+/, '')}`;
+    }
+    if (/^https?:\/\//i.test(decoded)) {
+      return decoded.replace(/^http:\/\//i, 'https://');
+    }
+    if (/^\/\//.test(decoded)) {
+      return `https:${decoded}`;
+    }
+    if (/^[a-z0-9.-]+\//i.test(decoded)) {
+      return `https://${decoded}`;
+    }
+
+    return '';
+  }
+
+  private getAllProductImageCandidates(product: any, size: number = 900): string[] {
+    let rawData: any = {};
+    if (product.rawRow) {
+      try {
+        rawData = typeof product.rawRow === 'string' ? JSON.parse(product.rawRow) : product.rawRow;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const rawCandidates = [
+      product?.largeImage,
+      product?.imageUrl,
+      product?.image,
+      rawData.large_image,
+      rawData.alternate_image,
+      rawData.alternate_image_two,
+      rawData.alternate_image_three,
+      rawData.alternate_image_four,
+      product?.alternateImage,
+      rawData.merchant_image_url,
+      rawData.merchant_thumb_url,
+      product?.merchantThumbUrl,
+      product?.awThumbUrl,
+      rawData.aw_thumb_url,
+    ];
+
+    if (Array.isArray(product?.images)) {
+      rawCandidates.push(...product.images);
+    }
+
+    const candidates: string[] = [];
+
+    const addUnique = (val?: string | null) => {
+      if (!this.isUsableImageValue(val)) return;
+      const secure = val.trim().replace(/^http:\/\//i, 'https://');
+      if (secure.includes('noimage.gif')) return;
+      if (!candidates.includes(secure)) {
+        candidates.push(secure);
+      }
+    };
+
+    const merchantId = rawData?.merchant_id || product?.merchantId || '3353';
+    const productId = rawData?.aw_product_id || product?.awinId || product?.id || '12345';
+
+    for (const source of rawCandidates) {
+      if (!this.isUsableImageValue(source)) continue;
+      const secureSource = source.trim().replace(/^http:\/\//i, 'https://');
+      try {
+        const parsed = new URL(secureSource);
+        if (parsed.hostname.includes('productserve.com')) {
+          parsed.searchParams.set('w', String(size));
+          parsed.searchParams.set('h', String(size));
+          if (!parsed.searchParams.has('bg')) parsed.searchParams.set('bg', 'white');
+          if (!parsed.searchParams.has('t')) parsed.searchParams.set('t', 'letterbox');
+          addUnique(parsed.toString());
+
+          const directSource = this.decodeProductServeSource(parsed.searchParams.get('url'));
+          addUnique(directSource);
+          if (directSource && !directSource.includes('productserve.com') && !directSource.includes('wsrv.nl')) {
+            addUnique(`https://wsrv.nl/?url=${encodeURIComponent(directSource)}&w=${size}&output=webp`);
+          }
+        } else if (parsed.hostname.includes('wsrv.nl')) {
+          addUnique(secureSource);
+        } else {
+          addUnique(secureSource);
+          addUnique(`https://images.productserve.com/preview/${merchantId}/${productId}.jpg?w=${size}&h=${size}&bg=white&t=letterbox&url=${encodeURIComponent(secureSource)}`);
+          addUnique(`https://images2.productserve.com/preview/${merchantId}/${productId}.jpg?w=${size}&h=${size}&bg=white&t=letterbox&url=${encodeURIComponent(secureSource)}`);
+          addUnique(`https://wsrv.nl/?url=${encodeURIComponent(secureSource)}&w=${size}&output=webp`);
+        }
+      } catch {
+        addUnique(secureSource);
+      }
+    }
+
+    return candidates;
+  }
+
+  async verifyAndUpdateProdImages(jobId?: string) {
+    this.logger.log('Starting verification of PROD product images...');
+    const products = await (this.prisma as any).product.findMany({
+      select: {
+        id: true,
+        imageUrl: true,
+        rawRow: true,
+        merchant: true,
+      },
+    });
+
+    this.logger.log(`Verifying images for ${products.length} products in PROD...`);
+    if (jobId) {
+      this.statusService.updateJob(jobId, 0, `Verifying images for ${products.length} products in PROD...`);
+    }
+
+    const checkImageUrl = async (url: string): Promise<boolean> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(url, {
+          method: 'HEAD',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return res.status >= 200 && res.status < 400;
+      } catch {
+        clearTimeout(timeoutId);
+        return false;
+      }
+    };
+
+    const chunkSize = 20;
+    for (let i = 0; i < products.length; i += chunkSize) {
+      const chunk = products.slice(i, i + chunkSize);
+      await Promise.all(
+        chunk.map(async (p: any) => {
+          const candidates = this.getAllProductImageCandidates(p);
+          let validUrl = '';
+          for (const url of candidates) {
+            if (await checkImageUrl(url)) {
+              validUrl = url;
+              break;
+            }
+          }
+          if (!validUrl) {
+            validUrl = candidates[0] || p.imageUrl || '';
+          }
+          if (validUrl && validUrl !== p.imageUrl) {
+            await this.prisma.$executeRawUnsafe(
+              `UPDATE "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" SET image_url = $1 WHERE aw_product_id = $2`,
+              validUrl,
+              p.id,
+            );
+          }
+        }),
+      );
+
+      if (jobId && i % 100 === 0) {
+        this.statusService.updateJob(jobId, 0, `Verifying images: processed ${Math.min(i + chunkSize, products.length)} / ${products.length} products...`);
+      }
+    }
+
+    this.logger.log('Starting verification of ProductColorVariant images...');
+    const variants = await (this.prisma as any).productColorVariant.findMany({
+      select: {
+        id: true,
+        imageUrl: true,
+      },
+    });
+
+    for (let i = 0; i < variants.length; i += chunkSize) {
+      const chunk = variants.slice(i, i + chunkSize);
+      await Promise.all(
+        chunk.map(async (v: any) => {
+          if (v.imageUrl && !(await checkImageUrl(v.imageUrl))) {
+            const proxyUrl = `https://wsrv.nl/?url=${encodeURIComponent(v.imageUrl)}&w=900&output=webp`;
+            if (await checkImageUrl(proxyUrl)) {
+              await this.prisma.$executeRawUnsafe(
+                `UPDATE "ProductColorVariant" SET image_url = $1 WHERE id = $2`,
+                proxyUrl,
+                v.id,
+              );
+            }
+          }
+        }),
+      );
+    }
+
+    this.logger.log('Image verification complete.');
+  }
+
   async loadDevToProd(replace = true, syncProductTable = true, jobId?: string) {
     await this.ensureAwinPipelineTables();
 
@@ -749,6 +955,15 @@ export class AwinService {
 
         loaded_at = NOW()
     `);
+
+    this.logger.log('Removing artificial plant products from PROD table...');
+    await this.prisma.$executeRawUnsafe(`
+      DELETE FROM "${this.awinPipelineTables.prod}"
+      WHERE (product_name ILIKE '%plant%' OR category_name ILIKE '%plant%' OR merchant_category ILIKE '%plant%')
+        AND product_name ILIKE '%artificial%';
+    `);
+
+    await this.verifyAndUpdateProdImages(jobId);
 
     const [{ count }] = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT COUNT(*)::int AS count FROM "${this.awinPipelineTables.prod}"`,
