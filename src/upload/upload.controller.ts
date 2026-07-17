@@ -40,7 +40,11 @@ export class UploadController {
       throw new BadRequestException('Only image files are allowed');
     }
 
-    return this.uploadService.uploadFile(file);
+    try {
+      return await this.uploadService.uploadFile(file);
+    } catch (err) {
+      throw new BadRequestException(err.message || 'Unknown error during upload');
+    }
   }
 
   @Post('bulk')

@@ -47,7 +47,7 @@ export class CategoryService {
       .replace(/^-+|-+$/g, '');
   }
 
-  async create(data: { name: string; parentId?: string; isAwin?: boolean }) {
+  async create(data: { name: string; parentId?: string; isAwin?: boolean; imageUrl?: string }) {
     const slug = this.slugify(data.name);
     const targetIsAwin = data.isAwin !== undefined ? data.isAwin : false;
     
@@ -84,6 +84,7 @@ export class CategoryService {
         name: data.name,
         slug,
         isAwin: targetIsAwin,
+        imageUrl: data.imageUrl || null,
         parentId: data.parentId || null,
       },
       include: {
@@ -192,6 +193,10 @@ export class CategoryService {
     
     if (data.parentId !== undefined) {
       updateData.parentId = data.parentId === 'null' ? null : data.parentId;
+    }
+
+    if (data.imageUrl !== undefined) {
+      updateData.imageUrl = data.imageUrl;
     }
 
     if (Object.keys(updateData).length === 0) {

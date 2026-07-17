@@ -16,12 +16,14 @@ export declare class CategoryService {
         name: string;
         parentId?: string;
         isAwin?: boolean;
+        imageUrl?: string;
     }): Promise<{
         parent: {
             id: string;
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -29,6 +31,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -36,6 +39,7 @@ export declare class CategoryService {
         name: string;
         slug: string;
         isAwin: boolean;
+        imageUrl: string | null;
         parentId: string | null;
     }>;
     findAll(isAwin?: boolean, search?: string, limit?: number, parentId?: string | null): Promise<({
@@ -44,6 +48,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -51,6 +56,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -58,6 +64,7 @@ export declare class CategoryService {
         name: string;
         slug: string;
         isAwin: boolean;
+        imageUrl: string | null;
         parentId: string | null;
     })[]>;
     findRoots(): Promise<({
@@ -66,6 +73,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -73,6 +81,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -80,6 +89,7 @@ export declare class CategoryService {
         name: string;
         slug: string;
         isAwin: boolean;
+        imageUrl: string | null;
         parentId: string | null;
     })[]>;
     reorder(orders: {
@@ -95,6 +105,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -102,6 +113,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -109,6 +121,7 @@ export declare class CategoryService {
         name: string;
         slug: string;
         isAwin: boolean;
+        imageUrl: string | null;
         parentId: string | null;
     }>;
     findBySlug(slug: string): Promise<{
@@ -117,6 +130,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -124,6 +138,7 @@ export declare class CategoryService {
             name: string;
             slug: string;
             isAwin: boolean;
+            imageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -131,6 +146,7 @@ export declare class CategoryService {
         name: string;
         slug: string;
         isAwin: boolean;
+        imageUrl: string | null;
         parentId: string | null;
     }>;
     update(id: string, data: any): Promise<{
@@ -143,6 +159,7 @@ export declare class CategoryService {
         name: string;
         slug: string;
         isAwin: boolean;
+        imageUrl: string | null;
         parentId: string | null;
         message?: undefined;
     }>;
@@ -151,6 +168,7 @@ export declare class CategoryService {
         name: string;
         slug: string;
         isAwin: boolean;
+        imageUrl: string | null;
         parentId: string | null;
     }>;
     removeAll(): Promise<{

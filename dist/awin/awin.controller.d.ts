@@ -107,10 +107,10 @@ export declare class AwinController {
         id: string;
         name: string;
         slug: string | null;
+        imageUrl: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
-        imageUrl: string | null;
         productUrl: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
@@ -140,10 +140,10 @@ export declare class AwinController {
         id: string;
         name: string;
         slug: string | null;
+        imageUrl: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
-        imageUrl: string | null;
         productUrl: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;

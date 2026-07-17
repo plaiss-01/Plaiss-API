@@ -29,7 +29,12 @@ let UploadController = class UploadController {
         if (!file.mimetype.startsWith('image/')) {
             throw new common_1.BadRequestException('Only image files are allowed');
         }
-        return this.uploadService.uploadFile(file);
+        try {
+            return await this.uploadService.uploadFile(file);
+        }
+        catch (err) {
+            throw new common_1.BadRequestException(err.message || 'Unknown error during upload');
+        }
     }
     async uploadFiles(files) {
         if (!files || files.length === 0) {

@@ -84,6 +84,7 @@ let CategoryService = class CategoryService {
                 name: data.name,
                 slug,
                 isAwin: targetIsAwin,
+                imageUrl: data.imageUrl || null,
                 parentId: data.parentId || null,
             },
             include: {
@@ -178,6 +179,9 @@ let CategoryService = class CategoryService {
         }
         if (data.parentId !== undefined) {
             updateData.parentId = data.parentId === 'null' ? null : data.parentId;
+        }
+        if (data.imageUrl !== undefined) {
+            updateData.imageUrl = data.imageUrl;
         }
         if (Object.keys(updateData).length === 0) {
             return { id, success: true, message: 'No changes made' };
