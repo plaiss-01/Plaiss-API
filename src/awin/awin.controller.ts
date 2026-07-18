@@ -828,9 +828,11 @@ export class AwinController {
       }
       if (minPrice || maxPrice) {
         const priceCond: any = {};
-        if (minPrice) priceCond.gte = parseFloat(minPrice);
-        if (maxPrice) priceCond.lte = parseFloat(maxPrice);
-        andConditions.push({ price: priceCond });
+        if (minPrice && !isNaN(parseFloat(minPrice))) priceCond.gte = parseFloat(minPrice);
+        if (maxPrice && !isNaN(parseFloat(maxPrice))) priceCond.lte = parseFloat(maxPrice);
+        if (Object.keys(priceCond).length > 0) {
+          andConditions.push({ price: priceCond });
+        }
       }
 
       if (hasFilters && andConditions.length > 0) {

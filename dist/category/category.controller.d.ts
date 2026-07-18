@@ -14,6 +14,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -22,6 +23,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -30,6 +32,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
     }>;
     findAll(isAwin?: string, search?: string, limit?: string, parentId?: string): Promise<({
@@ -39,6 +42,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -47,6 +51,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -55,6 +60,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
     })[]>;
     findRoots(): Promise<({
@@ -64,6 +70,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -72,6 +79,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -80,6 +88,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
     })[]>;
     reorder(orders: {
@@ -97,6 +106,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -105,6 +115,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -113,6 +124,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
     }>;
     findOne(id: string): Promise<{
@@ -122,6 +134,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         } | null;
         children: {
@@ -130,6 +143,7 @@ export declare class CategoryController {
             slug: string;
             isAwin: boolean;
             imageUrl: string | null;
+            headerImageUrl: string | null;
             parentId: string | null;
         }[];
     } & {
@@ -138,6 +152,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
     }>;
     bulkLink(data: {
@@ -157,6 +172,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
         message?: undefined;
     }>;
@@ -171,6 +187,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
         message?: undefined;
     }>;
@@ -180,6 +197,7 @@ export declare class CategoryController {
         slug: string;
         isAwin: boolean;
         imageUrl: string | null;
+        headerImageUrl: string | null;
         parentId: string | null;
     }>;
     removeAll(): Promise<{

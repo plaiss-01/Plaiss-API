@@ -199,6 +199,10 @@ export class CategoryService {
       updateData.imageUrl = data.imageUrl;
     }
 
+    if (data.headerImageUrl !== undefined) {
+      updateData.headerImageUrl = data.headerImageUrl;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return { id, success: true, message: 'No changes made' };
     }

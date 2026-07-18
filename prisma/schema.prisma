@@ -71,15 +71,16 @@ model Product {
 }
 
 model Category {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  slug      String   @unique
-  isAwin    Boolean  @default(true)
-  imageUrl  String?
-  parentId  String?
-  parent    Category?  @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  children  Category[] @relation("CategoryToCategory")
-  products  Product[]
+  id              String     @id @default(cuid())
+  name            String     @unique
+  slug            String     @unique
+  isAwin          Boolean    @default(true)
+  imageUrl        String?
+  headerImageUrl  String?
+  parentId        String?
+  parent          Category?  @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children        Category[] @relation("CategoryToCategory")
+  products        Product[]
 }
 
 model Colour {
