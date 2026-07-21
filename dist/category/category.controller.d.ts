@@ -4,6 +4,7 @@ export declare class CategoryController {
     constructor(categoryService: CategoryService);
     create(data: {
         name: string;
+        slug?: string;
         parentId?: string;
         isAwin?: boolean;
         imageUrl?: string;

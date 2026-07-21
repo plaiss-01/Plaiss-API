@@ -15,7 +15,7 @@ export class CategoryController {
   constructor(private readonly categoryService: CategoryService) { }
 
   @Post()
-  create(@Body() data: { name: string; parentId?: string; isAwin?: boolean; imageUrl?: string }) {
+  create(@Body() data: { name: string; slug?: string; parentId?: string; isAwin?: boolean; imageUrl?: string }) {
     return this.categoryService.create(data);
   }
 

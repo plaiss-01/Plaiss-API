@@ -47,8 +47,8 @@ export class CategoryService {
       .replace(/^-+|-+$/g, '');
   }
 
-  async create(data: { name: string; parentId?: string; isAwin?: boolean; imageUrl?: string }) {
-    const slug = this.slugify(data.name);
+  async create(data: { name: string; slug?: string; parentId?: string; isAwin?: boolean; imageUrl?: string }) {
+    const slug = data.slug && data.slug.trim() !== '' ? this.slugify(data.slug) : this.slugify(data.name);
     const targetIsAwin = data.isAwin !== undefined ? data.isAwin : false;
     
     // Check if category already exists by name or slug
@@ -164,31 +164,45 @@ export class CategoryService {
     if (!currentCategory) throw new NotFoundException('Category not found');
     
     if (data.name && data.name !== currentCategory.name) {
-      const slug = this.slugify(data.name);
-      
+      updateData.name = data.name;
+    }
+
+    if (data.slug !== undefined) {
+      if (data.slug.trim() !== '') {
+        updateData.slug = this.slugify(data.slug);
+      } else {
+        updateData.slug = this.slugify(data.name || currentCategory.name);
+      }
+    } else if (updateData.name) {
+      updateData.slug = this.slugify(data.name);
+    }
+
+    if (updateData.name || updateData.slug) {
+      const checkName = updateData.name || currentCategory.name;
+      const checkSlug = updateData.slug || currentCategory.slug;
+
       // Check if another category already has this name or slug
       const existing = await this.prisma.category.findFirst({
         where: {
           OR: [
-            { name: data.name },
-            { slug: slug }
+            { name: checkName },
+            { slug: checkSlug }
           ],
           NOT: { id }
         }
       });
       
       if (existing) {
-        throw new ConflictException(`Category with name "${data.name}" or slug "${slug}" already exists.`);
+        throw new ConflictException(`Category with name "${checkName}" or slug "${checkSlug}" already exists.`);
       }
-
-      updateData.name = data.name;
-      updateData.slug = slug;
       
-      // Also update products if needed
-      await this.prisma.product.updateMany({
-        where: { category: { equals: currentCategory.name, mode: 'insensitive' } },
-        data: { category: data.name },
-      });
+      if (updateData.name) {
+        // Also update products if needed
+        await this.prisma.product.updateMany({
+          where: { category: { equals: currentCategory.name, mode: 'insensitive' } },
+          data: { category: updateData.name },
+        });
+      }
     }
     
     if (data.parentId !== undefined) {

@@ -14,6 +14,7 @@ export declare class CategoryService {
     private slugify;
     create(data: {
         name: string;
+        slug?: string;
         parentId?: string;
         isAwin?: boolean;
         imageUrl?: string;
