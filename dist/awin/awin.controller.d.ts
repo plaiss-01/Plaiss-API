@@ -102,16 +102,16 @@ export declare class AwinController {
     getProductBySlug(slug: string): Promise<any>;
     getProductById(id: string): Promise<any>;
     updateProduct(id: string, updateProductDto: UpdateProductDto): Promise<{
-        category: string | null;
         id: string;
         name: string;
         slug: string | null;
-        imageUrl: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
+        imageUrl: string | null;
         productUrl: string | null;
         merchant: string | null;
+        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         categoryId: string | null;
@@ -135,16 +135,16 @@ export declare class AwinController {
         salesDiscount: string | null;
     }>;
     deleteProduct(id: string): Promise<{
-        category: string | null;
         id: string;
         name: string;
         slug: string | null;
-        imageUrl: string | null;
         description: string | null;
         price: number | null;
         currency: string | null;
+        imageUrl: string | null;
         productUrl: string | null;
         merchant: string | null;
+        category: string | null;
         merchantProductId: string | null;
         merchantCategory: string | null;
         categoryId: string | null;

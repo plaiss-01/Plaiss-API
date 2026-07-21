@@ -242,6 +242,19 @@ export class AwinController {
   private getCategoryTerms(name: string): string[] {
     const terms = [name];
     const lower = name.toLowerCase();
+
+    // Add synonyms for number seaters
+    const seaterMatch = lower.match(/^(one|two|three|four|five|six|seven|eight|nine|\d+)-?seater(?:s)?$/);
+    if (seaterMatch) {
+      const numMap: Record<string, string> = {
+        'one': '1', 'two': '2', 'three': '3', 'four': '4',
+        'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'
+      };
+      const num = numMap[seaterMatch[1]] || seaterMatch[1];
+      terms.push(`${num} seater`);
+      terms.push(`${num}-seater`);
+      terms.push(`${seaterMatch[1]} seater`);
+    }
     
     // Plural to singular rules
     if (lower.endsWith('ies')) {
@@ -528,6 +541,15 @@ export class AwinController {
             merchantCategory: { contains: name, mode: 'insensitive' as const }
           }))
         });
+
+        const seaterTerms = uniqueNames.filter(n => /\b\d+\s*seater\b/i.test(n) || /\b(?:one|two|three|four)\s*seater\b/i.test(n));
+        if (seaterTerms.length > 0) {
+          where.OR.push({
+            OR: seaterTerms.map(name => ({
+              name: { contains: name, mode: 'insensitive' as const }
+            }))
+          });
+        }
       }
 
       // If the root category is Lighting or a subcategory of Lighting, aggressively filter out miscategorized furniture
@@ -743,6 +765,13 @@ export class AwinController {
 
       console.log(`[getAllProducts] Query: "${category}", IDs: ${uniqueIds.length}, Names: ${uniqueNames.length}`);
 
+      const seaterTerms = uniqueNames.filter(n => /\b\d+\s*seater\b/i.test(n) || /\b(?:one|two|three|four)\s*seater\b/i.test(n));
+      const nameOrArray = seaterTerms.length > 0 ? {
+        OR: seaterTerms.map((name) => ({
+          name: { contains: name, mode: 'insensitive' as const },
+        })),
+      } : null;
+
       where.OR = [
         { categoryRel: { id: { in: uniqueIds } } },
         {
@@ -755,6 +784,7 @@ export class AwinController {
             merchantCategory: { contains: name, mode: 'insensitive' as const },
           })),
         },
+        ...(nameOrArray ? [nameOrArray] : []),
       ];
 
       // If the root category is Lighting or a subcategory of Lighting, aggressively filter out miscategorized furniture

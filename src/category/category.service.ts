@@ -48,7 +48,9 @@ export class CategoryService {
   }
 
   async create(data: { name: string; slug?: string; parentId?: string; isAwin?: boolean; imageUrl?: string }) {
-    const slug = data.slug && data.slug.trim() !== '' ? this.slugify(data.slug) : this.slugify(data.name);
+    const slug = data.slug && data.slug.trim() !== '' 
+      ? (data.slug.match(/[?=/&:]/) ? data.slug.trim() : this.slugify(data.slug)) 
+      : this.slugify(data.name);
     const targetIsAwin = data.isAwin !== undefined ? data.isAwin : false;
     
     // Check if category already exists by name or slug
@@ -169,7 +171,7 @@ export class CategoryService {
 
     if (data.slug !== undefined) {
       if (data.slug.trim() !== '') {
-        updateData.slug = this.slugify(data.slug);
+        updateData.slug = data.slug.match(/[?=/&:]/) ? data.slug.trim() : this.slugify(data.slug);
       } else {
         updateData.slug = this.slugify(data.name || currentCategory.name);
       }
