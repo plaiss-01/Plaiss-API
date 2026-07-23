@@ -10,6 +10,7 @@ import { HealthController } from './health.controller';
 import { PrismaModule } from './prisma.module';
 import { BlogModule } from './blog/blog.module';
 import { VisualSearchModule } from './visual-search/visual-search.module';
+import { ContactModule } from './contact/contact.module';
 
 
 @Module({
@@ -21,7 +22,8 @@ import { VisualSearchModule } from './visual-search/visual-search.module';
     UploadModule,
     CategoryModule,
     BlogModule,
-    VisualSearchModule
+    VisualSearchModule,
+    ContactModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

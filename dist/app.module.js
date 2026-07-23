@@ -19,6 +19,7 @@ const health_controller_1 = require("./health.controller");
 const prisma_module_1 = require("./prisma.module");
 const blog_module_1 = require("./blog/blog.module");
 const visual_search_module_1 = require("./visual-search/visual-search.module");
+const contact_module_1 = require("./contact/contact.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -32,7 +33,8 @@ exports.AppModule = AppModule = __decorate([
             upload_module_1.UploadModule,
             category_module_1.CategoryModule,
             blog_module_1.BlogModule,
-            visual_search_module_1.VisualSearchModule
+            visual_search_module_1.VisualSearchModule,
+            contact_module_1.ContactModule,
         ],
         controllers: [app_controller_1.AppController, health_controller_1.HealthController],
         providers: [app_service_1.AppService],
