@@ -1336,6 +1336,15 @@ export class AwinService {
   }
 
   private inferAwinColour(row: any, getVal: Function, categoryName: string) {
+    // Poltronesofà at SCS (merchant_id 3682): the merchant_product_id and deep_link
+    // embed the hardware colour ("...black plastic feet..."), which wrongly wins over
+    // the actual fabric colour because "black" is matched before shorter colour words.
+    // custom_3 (e.g. "EDERA BLUE 515") holds ONLY the fabric colour, so trust it first.
+    if (this.isPoltronesofaScsMerchant(getVal)) {
+      const fromCustom3 = this.detectStandardColour(this.combineAwinFields(getVal, ['custom_3']));
+      if (fromCustom3 !== 'Unknown') return fromCustom3;
+    }
+
     const fields = [
       'merchant_deep_link',
       'merchantDeepLink',
@@ -1371,6 +1380,13 @@ export class AwinService {
     }
 
     return 'Unknown';
+  }
+
+  private isPoltronesofaScsMerchant(getVal: Function): boolean {
+    const merchantId = String(getVal(['merchant_id', 'merchantId']) ?? '').trim();
+    if (merchantId === '3682') return true;
+    const merchantName = String(getVal(['merchant_name', 'merchantName']) ?? '').toLowerCase();
+    return merchantName.includes('poltronesof');
   }
 
   private detectStandardColour(text: string) {
