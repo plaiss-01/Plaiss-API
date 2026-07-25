@@ -213,7 +213,14 @@ export class AwinController implements OnApplicationBootstrap {
       images: img ? [img] : [],
       colorVariants: product.colorVariants || [],
       colors: (() => {
-        const colorName = product.colour || product.colourClean || null;
+        // Poltronesofà at SCS embeds hardware colours (e.g. "black plastic feet") in the raw
+        // `colour` field, so it is unreliable for this merchant; `colourClean` is derived from the
+        // authoritative fabric colour (custom_3) — see inferAwinColour in awin.service.ts. Prefer
+        // the clean colour here so the displayed swatch matches the real fabric, not the feet.
+        const isPoltronesofaScs = /poltronesof/i.test(product.merchant || '');
+        const colorName = isPoltronesofaScs
+          ? product.colourClean || product.colour || null
+          : product.colour || product.colourClean || null;
         return colorName ? [{ name: colorName, hex: colorName, imageUrl: img, productUrl: product.productUrl }] : [];
       })(),
       normalizedAttributes: {},
