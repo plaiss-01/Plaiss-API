@@ -1963,33 +1963,78 @@ export class AwinService {
 
 
   async deduplicateProducts() {
-    this.logger.log('Starting global product deduplication...');
+    this.logger.log('Starting global product deduplication (base_sku aware)...');
+
+    // Rebuild the colour-variant table from scratch each run so re-imports don't
+    // leave orphaned variants pointing at rows that were deleted last time.
+    await this.prisma.$executeRawUnsafe(`TRUNCATE TABLE "ProductColorVariant"`);
+
     const allProducts = await (this.prisma as any).product.findMany({
       select: {
         id: true,
         name: true,
         description: true,
         colour: true,
+        colourClean: true,
+        baseSku: true,
+        colourVariantNumber: true,
         imageUrl: true,
         productUrl: true,
-        colorVariants: true,
         rawRow: true,
       }
     });
 
-    const groups = new Map<string, any[]>();
+    const COLOUR_WORDS = ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'];
 
-    allProducts.forEach((p: any) => {
-      // Create a "Core Name" by stripping common variant terms
-      let coreName = p.name
+    const coreNameOf = (name: string) => {
+      let c = (name || '')
         .toLowerCase()
-        .replace(/\b(red|blue|green|black|white|grey|gray|yellow|pink|purple|brown|beige|cream|teal|navy|charcoal|silver|gold|orange)\b/gi, '')
+        .replace(new RegExp(`\\b(${COLOUR_WORDS.join('|')})\\b`, 'gi'), '')
         .replace(/\s+/g, ' ')
         .trim();
+      if (c.length < 5) c = (name || '').toLowerCase().trim();
+      return c;
+    };
 
-      if (coreName.length < 5) coreName = p.name.toLowerCase().trim();
+    // Colour identity for a row: prefer the accurate colour_clean (this is what fixes
+    // merchants like SCS whose raw `colour` is always "Black"), then raw colour, then a
+    // colour word in the name. This is the key used to keep ONE swatch per distinct colour.
+    const colourOf = (p: any) => {
+      const clean = p.colourClean;
+      if (clean && clean !== 'Unknown' && clean !== 'N/A') return clean;
+      if (p.colour) return p.colour;
+      const w = (p.name || '').toLowerCase().split(/\s+/).find((word: string) => COLOUR_WORDS.includes(word));
+      return w || 'Original';
+    };
 
-      const key = `${coreName}`;
+    const bestImageOf = (p: any) => {
+      let rawData: any = {};
+      if (p.rawRow) {
+        try { rawData = typeof p.rawRow === 'string' ? JSON.parse(p.rawRow) : p.rawRow; } catch { /* ignore */ }
+      }
+      const candidates = [
+        p.imageUrl,
+        rawData.alternate_image,
+        rawData.alternate_image_two,
+        rawData.alternate_image_three,
+        rawData.alternate_image_four,
+        rawData.merchant_image_url,
+        rawData.merchant_thumb_url,
+      ];
+      let best = p.imageUrl || '';
+      for (const candidate of candidates) {
+        if (candidate && !candidate.includes('noimage.gif')) { best = candidate; break; }
+      }
+      return best && !best.includes('noimage.gif') ? best : null;
+    };
+
+    // Group by base_sku (the true product identity — all colour variants of one item share
+    // it). Fall back to the legacy fuzzy core-name only when base_sku is missing.
+    const groups = new Map<string, any[]>();
+    allProducts.forEach((p: any) => {
+      const key = (p.baseSku && String(p.baseSku).trim())
+        ? `sku:${String(p.baseSku).trim()}`
+        : `name:${coreNameOf(p.name)}`;
       const group = groups.get(key) || [];
       group.push(p);
       groups.set(key, group);
@@ -2027,89 +2072,55 @@ export class AwinService {
       }
     };
 
-    for (const [key, products] of groups.entries()) {
+    for (const [, products] of groups.entries()) {
       if (products.length <= 1) continue;
 
-      const sorted = products.sort((a, b) => (b.description?.length || 0) - (a.description?.length || 0));
-      const master = sorted[0];
-      const variants = sorted.slice(1);
+      // Master = the canonical colour_variant_number === 1 row (this is exactly the row the
+      // grid/list endpoint keeps visible). Fall back to the best-imaged / most-described row
+      // only if no vn=1 exists. All the other rows collapse INTO the master as colour swatches.
+      let master = products.find((p: any) => p.colourVariantNumber === 1);
+      if (!master) {
+        master = [...products].sort((a: any, b: any) =>
+          ((bestImageOf(b) ? 1 : 0) - (bestImageOf(a) ? 1 : 0)) ||
+          ((b.description?.length || 0) - (a.description?.length || 0))
+        )[0];
+      }
 
       const seenColors = new Set<string>();
-      const masterColor = master.colour || master.name.split(' ').find((word: string) =>
-        ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase())
-      );
-      if (masterColor) seenColors.add(masterColor.toLowerCase());
+      seenColors.add(colourOf(master).toLowerCase());
 
-      for (const v of variants) {
-        const colorName = v.colour || v.name.split(' ').find((word: string) =>
-          ['red', 'blue', 'green', 'black', 'white', 'grey', 'gray', 'yellow', 'pink', 'purple', 'brown', 'beige', 'cream', 'teal', 'navy', 'charcoal', 'silver', 'gold', 'orange'].includes(word.toLowerCase())
-        ) || 'Original';
+      for (const v of products) {
+        if (v.id === master.id) continue;
 
+        // Every non-master row is removed from the main product table...
+        batchDeletes.push(v.id);
+        mergedCount++;
+
+        // ...but each DISTINCT colour is preserved as a selectable swatch. Keyed on the
+        // accurate colour (colour_clean), so we no longer collapse all of SCS to one "Black".
+        const colorName = colourOf(v);
         const colorKey = colorName.toLowerCase();
-
-        batchDeletes.push(v.id);
-        mergedCount++;
-        variantCount++;
-
-        if (seenColors.has(colorKey)) {
-          if (batchDeletes.length >= BATCH_SIZE) {
-            await flushBatches(batchInserts, batchDeletes);
-            this.logger.log(`Merged ${mergedCount} products...`);
-            batchInserts = [];
-            batchDeletes = [];
-          }
-          continue;
-        }
-        seenColors.add(colorKey);
-
-        // Extract best image for the variant from rawRow if available
-        let rawData: any = {};
-        if (v.rawRow) {
-          try {
-            rawData = typeof v.rawRow === 'string' ? JSON.parse(v.rawRow) : v.rawRow;
-          } catch (e) { /* ignore */ }
+        if (!seenColors.has(colorKey)) {
+          seenColors.add(colorKey);
+          batchInserts.push([master.id, colorName, bestImageOf(v), v.productUrl || '', v.id]);
+          variantCount++;
         }
 
-        const candidates = [
-          v.imageUrl,
-          rawData.alternate_image,
-          rawData.alternate_image_two,
-          rawData.alternate_image_three,
-          rawData.alternate_image_four,
-          rawData.merchant_image_url,
-          rawData.merchant_thumb_url,
-        ];
-
-        let bestImage = v.imageUrl || '';
-        for (const candidate of candidates) {
-          if (candidate && !candidate.includes('noimage.gif')) {
-            bestImage = candidate;
-            break;
-          }
-        }
-
-        const finalImage = bestImage.includes('noimage.gif') ? null : bestImage;
-        batchInserts.push([master.id, colorName, finalImage, v.productUrl || '', v.id]);
-        batchDeletes.push(v.id);
-
-        mergedCount++;
-        variantCount++;
-
-        if (batchInserts.length >= BATCH_SIZE) {
+        if (batchInserts.length >= BATCH_SIZE || batchDeletes.length >= BATCH_SIZE) {
           await flushBatches(batchInserts, batchDeletes);
-          this.logger.log(`Merged ${mergedCount} products...`);
+          this.logger.log(`Dedup progress: ${mergedCount} rows merged, ${variantCount} colour swatches created...`);
           batchInserts = [];
           batchDeletes = [];
         }
       }
     }
 
-    // Flush remaining
-    if (batchInserts.length > 0) {
+    // Flush remaining (either list may be non-empty independently)
+    if (batchInserts.length > 0 || batchDeletes.length > 0) {
       await flushBatches(batchInserts, batchDeletes);
     }
 
-    this.logger.log(`Deduplication complete. Merged ${mergedCount} products into variants.`);
+    this.logger.log(`Deduplication complete. Merged ${mergedCount} rows into ${variantCount} colour swatches.`);
     return { mergedCount, variantCount };
   }
 }
