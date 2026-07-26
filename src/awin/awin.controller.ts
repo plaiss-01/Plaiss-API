@@ -758,8 +758,13 @@ export class AwinController implements OnApplicationBootstrap {
       let uniqueIds = Array.from(new Set(allCategoryIds));
       let uniqueNames = Array.from(new Set(allCategoryNames));
 
-      // If no subcategories are requested, include the requested category name/terms
-      if (category && !subs) {
+      // Include the requested category's own name/terms alongside any subcategory terms.
+      // Without this, a parent category whose subcategories match no products (e.g. the
+      // orphan one/two/three-seater subcats under "Sofas") would return 0 rows and trip the
+      // parent fallback, dumping the entire top-level "Furniture" bucket into the page.
+      // Lighting is left untouched (its subcategory-only behaviour is intentional and paired
+      // with the aggressive furniture exclusion below), so it keeps skipping when subs exist.
+      if (category && (!subs || !this.isUnderLighting(targetCats[0]?.id, categoryMap))) {
         const categoryTerms = this.isUnderLighting(targetCats[0]?.id, categoryMap)
           ? [category]
           : this.getCategoryTerms(category);
