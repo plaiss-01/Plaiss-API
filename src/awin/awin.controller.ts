@@ -615,6 +615,33 @@ export class AwinController implements OnApplicationBootstrap {
         if (!where.AND) where.AND = [];
         where.AND.push({ NOT: { OR: notConditions } });
       }
+
+      // If the category is Chairs (or a Chairs subcategory), exclude office/gaming/task chairs
+      // so it shows home/dining/accent/recliner chairs only. Keeps 'swivel' and 'recliner'.
+      let isChairsCategory = false;
+      if (category && category.toLowerCase() === 'chairs') {
+        isChairsCategory = true;
+      } else if (targetCats) {
+        for (const cat of targetCats) {
+          let currentCat = cat;
+          while (currentCat) {
+            if (currentCat.name.toLowerCase() === 'chairs' || currentCat.slug.toLowerCase() === 'chairs') {
+              isChairsCategory = true;
+              break;
+            }
+            currentCat = currentCat.parentId ? categoryMap.get(currentCat.parentId) : null;
+          }
+          if (isChairsCategory) break;
+        }
+      }
+      if (isChairsCategory) {
+        const officeChairTerms = ['office', 'gaming', 'gamer', 'racing', 'executive', 'ergonomic', 'task chair', 'computer chair', 'desk chair'];
+        const officeNot = officeChairTerms.map(term => ({
+          name: { contains: term, mode: 'insensitive' as const }
+        }));
+        if (!where.AND) where.AND = [];
+        where.AND.push({ NOT: { OR: officeNot } });
+      }
     }
 
     const [sizes, colors, materials, merchants] = await Promise.all([
@@ -851,6 +878,33 @@ export class AwinController implements OnApplicationBootstrap {
         // Ensure where.AND exists
         if (!where.AND) where.AND = [];
         where.AND.push({ NOT: { OR: notConditions } });
+      }
+
+      // If the category is Chairs (or a Chairs subcategory), exclude office/gaming/task chairs
+      // so it shows home/dining/accent/recliner chairs only. Keeps 'swivel' and 'recliner'.
+      let isChairsCategory = false;
+      if (category && category.toLowerCase() === 'chairs') {
+        isChairsCategory = true;
+      } else if (targetCats) {
+        for (const cat of targetCats) {
+          let currentCat = cat;
+          while (currentCat) {
+            if (currentCat.name.toLowerCase() === 'chairs' || currentCat.slug.toLowerCase() === 'chairs') {
+              isChairsCategory = true;
+              break;
+            }
+            currentCat = currentCat.parentId ? categoryMap.get(currentCat.parentId) : null;
+          }
+          if (isChairsCategory) break;
+        }
+      }
+      if (isChairsCategory) {
+        const officeChairTerms = ['office', 'gaming', 'gamer', 'racing', 'executive', 'ergonomic', 'task chair', 'computer chair', 'desk chair'];
+        const officeNot = officeChairTerms.map(term => ({
+          name: { contains: term, mode: 'insensitive' as const }
+        }));
+        if (!where.AND) where.AND = [];
+        where.AND.push({ NOT: { OR: officeNot } });
       }
     }
 
