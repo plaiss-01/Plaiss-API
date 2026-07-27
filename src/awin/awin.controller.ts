@@ -22,6 +22,12 @@ export class AwinController implements OnApplicationBootstrap {
   ) { }
 
   async onApplicationBootstrap() {
+    // Ensure the trigram search indexes exist BEFORE warmup. `prisma db push` on boot drops
+    // any index not declared in schema.prisma, and these GIN/pg_trgm indexes are created here
+    // (not in the schema), so they must be re-ensured every boot or category ILIKE queries
+    // fall back to full seq scans (facets/products go from <1s to 90s+). Idempotent.
+    await this.ensureSearchIndexes();
+
     const categories = ['Plants', 'Sofas', 'Lighting', 'Chairs', 'Decor'];
     this.logger.log('[Warmup] Pre-populating product + facets cache for popular categories...');
     await Promise.all(
@@ -38,6 +44,27 @@ export class AwinController implements OnApplicationBootstrap {
       })
     );
     this.logger.log('[Warmup] Done.');
+  }
+
+  // Recreate the pg_trgm GIN indexes that back fast category/search ILIKE queries. These live
+  // outside schema.prisma so `prisma db push` drops them on every boot — without them the
+  // sofas/lighting facet + product queries seq-scan the whole table (90s+). IF NOT EXISTS makes
+  // this a no-op once they're present, so it only actually rebuilds after a push has dropped them.
+  private async ensureSearchIndexes() {
+    const statements = [
+      `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
+      `CREATE INDEX IF NOT EXISTS prod_category_trgm_idx ON "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" USING gin (category_name gin_trgm_ops)`,
+      `CREATE INDEX IF NOT EXISTS prod_name_trgm_idx ON "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" USING gin (product_name gin_trgm_ops)`,
+      `CREATE INDEX IF NOT EXISTS prod_merchant_category_trgm_idx ON "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" USING gin (merchant_category gin_trgm_ops)`,
+    ];
+    for (const sql of statements) {
+      try {
+        await this.prisma.$executeRawUnsafe(sql);
+      } catch (e: any) {
+        this.logger.warn(`[Index] ensure failed (continuing): ${e?.message ?? e}`);
+      }
+    }
+    this.logger.log('[Index] trigram search indexes ensured');
   }
 
   private productsCache = new Map<string, { data: any, timestamp: number }>();
