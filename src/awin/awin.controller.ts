@@ -1366,4 +1366,25 @@ export class AwinController implements OnApplicationBootstrap {
     return result;
   }
 
+  // Curated homepage grid — ported from `main` so the deployed backend serves what the frontend
+  // (getHomepageSelectedProducts) calls. Additive; read-only GET reuses enhanceProductImages.
+  @Get('homepage-products')
+  @ApiOperation({ summary: 'Get all products selected for homepage' })
+  async getHomepageProducts() {
+    const products = await this.awinService.getHomepageProducts();
+    return products.map((p: any) => this.enhanceProductImages(p));
+  }
+
+  @Post('homepage-products/:productId')
+  @ApiOperation({ summary: 'Add a product to homepage' })
+  async addHomepageProduct(@Param('productId') productId: string) {
+    return this.awinService.addHomepageProduct(productId);
+  }
+
+  @Delete('homepage-products/:productId')
+  @ApiOperation({ summary: 'Remove a product from homepage' })
+  async removeHomepageProduct(@Param('productId') productId: string) {
+    return this.awinService.removeHomepageProduct(productId);
+  }
+
 }

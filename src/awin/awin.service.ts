@@ -2123,4 +2123,50 @@ export class AwinService {
     this.logger.log(`Deduplication complete. Merged ${mergedCount} rows into ${variantCount} colour swatches.`);
     return { mergedCount, variantCount };
   }
+
+  // Homepage curated products. Backs GET/POST/DELETE /api/awin/homepage-products (ported from
+  // the `main` branch so the deployed azure-migration backend serves the homepage grid the
+  // frontend expects). Reads/writes the pre-existing `homepage_products` table via raw SQL, so
+  // it needs no Prisma model and no schema change. Read-only GET; additive only.
+  async getHomepageProducts() {
+    const selected: any[] = await this.prisma.$queryRawUnsafe(
+      `SELECT product_id FROM homepage_products ORDER BY created_at`,
+    );
+    const productIds = selected.map((s) => s.product_id).filter(Boolean);
+    if (productIds.length === 0) return [];
+    return (this.prisma as any).product.findMany({
+      where: { id: { in: productIds } },
+      include: {
+        colorVariants: {
+          select: { id: true, colorName: true, imageUrl: true, productUrl: true, awinId: true },
+        },
+      },
+    });
+  }
+
+  async addHomepageProduct(productId: string) {
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO homepage_products (id, product_id, created_at)
+         SELECT gen_random_uuid()::text, $1, NOW()
+         WHERE NOT EXISTS (SELECT 1 FROM homepage_products WHERE product_id = $1)`,
+        productId,
+      );
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e?.message ?? String(e) };
+    }
+  }
+
+  async removeHomepageProduct(productId: string) {
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM homepage_products WHERE product_id = $1`,
+        productId,
+      );
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e?.message ?? String(e) };
+    }
+  }
 }
