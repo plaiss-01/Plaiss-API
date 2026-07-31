@@ -38,7 +38,11 @@ model Product {
   productModelClean     String? @map("product_model_clean")
   colourClean          String? @map("colour_clean")
   sizeStockStatusClean  String? @map("size_stock_status_clean")
-  
+  // Canonical product type behind the "Type" filter facet. This must stay
+  // declared here: start.sh runs `prisma db push` on every boot, which drops
+  // any column the schema doesn't know about.
+  productTypeClean      String? @map("product_type_clean")
+
   isRecliner           String? @map("is_recliner")
   isSofaBed            String? @map("is_sofa_bed")
   baseSku              String? @map("base_sku")
@@ -68,6 +72,7 @@ model Product {
   @@index([colourClean])
   @@index([sizeStockStatusClean])
   @@index([productModelClean])
+  @@index([productTypeClean])
   @@index([colourVariantNumber])
   @@index([imageUrl])
   @@index([createdAt])

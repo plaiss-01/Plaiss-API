@@ -477,7 +477,7 @@ export class AwinController implements OnApplicationBootstrap {
       const minVal = priceAgg._min.discountedPriceClean ?? priceAgg._min.price;
       const maxVal = priceAgg._max.discountedPriceClean ?? priceAgg._max.price;
       const allProductsFacets = {
-        sizes: [], colors: [], materials: [], merchants: [],
+        sizes: [], colors: [], materials: [], merchants: [], types: [],
         priceMin: Math.floor(minVal ?? 0),
         priceMax: Math.ceil(maxVal ?? 0),
       };
@@ -644,7 +644,7 @@ export class AwinController implements OnApplicationBootstrap {
       }
     }
 
-    const [sizes, colors, materials, merchants] = await Promise.all([
+    const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
       (this.prisma.product as any).findMany({
         where,
         distinct: ['sizeStockStatusClean'],
@@ -665,6 +665,13 @@ export class AwinController implements OnApplicationBootstrap {
         distinct: ['merchant'],
         select: { merchant: true },
       }),
+      // Types carry counts because a category can surface a dozen of them and
+      // the order matters to the user; the other facets are short lists.
+      (this.prisma.product as any).groupBy({
+        by: ['productTypeClean'],
+        where,
+        _count: { _all: true },
+      }),
     ]);
 
     // For prices, we can just do a simple findMany and calculate or use aggregate if available
@@ -682,6 +689,10 @@ export class AwinController implements OnApplicationBootstrap {
       colors: colors.map((c: any) => c.colourClean).filter(Boolean),
       materials: materials.map((m: any) => m.productModelClean).filter(Boolean),
       merchants: merchants.map((m: any) => m.merchant).filter(Boolean),
+      types: typeGroups
+        .filter((t: any) => t.productTypeClean)
+        .map((t: any) => ({ label: t.productTypeClean, count: t._count._all }))
+        .sort((a: any, b: any) => b.count - a.count),
       priceMin: minPriceVal ?? 0,
       priceMax: maxPriceVal ?? 0,
     };
@@ -963,7 +974,11 @@ export class AwinController implements OnApplicationBootstrap {
       if (types) {
         const array = types.replace(/\+/g, ' ').split(',').map(s => s.trim());
         andConditions.push({
+          // productTypeClean is the canonical Type facet; the looser
+          // productType/category matches stay so the Lighting sidebar, which
+          // passes raw category names through this same param, keeps working.
           OR: array.flatMap(val => [
+            { productTypeClean: { equals: val, mode: 'insensitive' as const } },
             { productType: { contains: val, mode: 'insensitive' as const } },
             { category: { contains: val, mode: 'insensitive' as const } }
           ])
