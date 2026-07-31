@@ -649,6 +649,18 @@ export class AwinController implements OnApplicationBootstrap {
         }));
         if (!where.AND) where.AND = [];
         where.AND.push({ NOT: { OR: officeNot } });
+
+        // Seat cushions and pillows were 4,081 of the 7,094 products here —
+        // more than half the category. Excluded by canonical type rather than
+        // by a name match, so an "Armchair with Cushion" (typed Armchair) is
+        // kept. The null branch is required: `not` alone drops untyped rows,
+        // because SQL `col <> 'Cushion'` is NULL, not true, when col IS NULL.
+        where.AND.push({
+          OR: [
+            { productTypeClean: null },
+            { productTypeClean: { not: 'Cushion' } },
+          ],
+        });
       }
     }
 
@@ -927,6 +939,18 @@ export class AwinController implements OnApplicationBootstrap {
         }));
         if (!where.AND) where.AND = [];
         where.AND.push({ NOT: { OR: officeNot } });
+
+        // Seat cushions and pillows were 4,081 of the 7,094 products here —
+        // more than half the category. Excluded by canonical type rather than
+        // by a name match, so an "Armchair with Cushion" (typed Armchair) is
+        // kept. The null branch is required: `not` alone drops untyped rows,
+        // because SQL `col <> 'Cushion'` is NULL, not true, when col IS NULL.
+        where.AND.push({
+          OR: [
+            { productTypeClean: null },
+            { productTypeClean: { not: 'Cushion' } },
+          ],
+        });
       }
     }
 
