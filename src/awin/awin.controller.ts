@@ -662,6 +662,20 @@ export class AwinController implements OnApplicationBootstrap {
           ],
         });
       }
+
+      // The Furniture root aggregates the same products, so without this it
+      // still leads with Cushion (4,093) while its Chairs child no longer
+      // does. Root only — the other children (Sofas, Tables, Storage…) carry
+      // no meaningful cushion count.
+      if (category && category.toLowerCase() === 'furniture') {
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+          OR: [
+            { productTypeClean: null },
+            { productTypeClean: { not: 'Cushion' } },
+          ],
+        });
+      }
     }
 
     const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
@@ -945,6 +959,20 @@ export class AwinController implements OnApplicationBootstrap {
         // by a name match, so an "Armchair with Cushion" (typed Armchair) is
         // kept. The null branch is required: `not` alone drops untyped rows,
         // because SQL `col <> 'Cushion'` is NULL, not true, when col IS NULL.
+        where.AND.push({
+          OR: [
+            { productTypeClean: null },
+            { productTypeClean: { not: 'Cushion' } },
+          ],
+        });
+      }
+
+      // The Furniture root aggregates the same products, so without this it
+      // still leads with Cushion (4,093) while its Chairs child no longer
+      // does. Root only — the other children (Sofas, Tables, Storage…) carry
+      // no meaningful cushion count.
+      if (category && category.toLowerCase() === 'furniture') {
+        if (!where.AND) where.AND = [];
         where.AND.push({
           OR: [
             { productTypeClean: null },
