@@ -1,4 +1,21 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "scratch", "*.ts"]
+  "compilerOptions": {
+    // Pin the root instead of letting tsc infer it from the input set. With no
+    // rootDir, tsc uses the common parent of all inputs, so the first .ts file
+    // added outside src/ silently moves the output from dist/main.js to
+    // dist/src/main.js and the container dies on MODULE_NOT_FOUND at boot.
+    // `tsc --noEmit` cannot catch it — it never produces the layout. Pinned, a
+    // stray input fails the build loudly instead.
+    "rootDir": "./src"
+  },
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*spec.ts",
+    "scratch",
+    "scripts",
+    "*.ts"
+  ]
 }
