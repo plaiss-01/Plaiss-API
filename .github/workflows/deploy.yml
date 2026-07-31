@@ -1,9 +1,22 @@
 name: Build and Deploy to Azure Container Apps
 
+# Production deploys come from `azure-migration` ONLY.
+#
+# This file used to list `main` here as well. Because GitHub Actions runs the
+# workflow from whichever branch was pushed, that meant a push to `main` and a
+# push to `azure-migration` both deployed to the same Container App, and
+# whichever landed last became production. The two branches are not supersets
+# of each other, so production kept flipping between them — a push to `main`
+# would silently drop the pg_trgm index bootstrap (sofa pages time out), the
+# base_sku colour dedup, and the category-term fixes that live on
+# `azure-migration`.
+#
+# `main` is therefore no longer a deploying branch. Merge into
+# `azure-migration` to release. Please check with the Plaiss maintainers before
+# changing this back.
 on:
   push:
     branches:
-      - main
       - azure-migration
 
 jobs:
