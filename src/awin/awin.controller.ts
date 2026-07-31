@@ -52,6 +52,14 @@ export class AwinController implements OnApplicationBootstrap {
   // this a no-op once they're present, so it only actually rebuilds after a push has dropped them.
   private async ensureSearchIndexes() {
     const statements = [
+      // start.sh runs `prisma db push` fail-soft, so a schema change can
+      // silently not apply and the app then boots against a column that isn't
+      // there — warmup calls getFacets, the groupBy throws, and the revision
+      // never becomes healthy. Guarantee the columns the code depends on here,
+      // the same way the trigram indexes are guaranteed below.
+      `ALTER TABLE "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" ADD COLUMN IF NOT EXISTS product_type_clean text`,
+      `ALTER TABLE "AWIN_AFFILIAT_PRODUCTS_DATA_DEV" ADD COLUMN IF NOT EXISTS product_type_clean text`,
+      `CREATE INDEX IF NOT EXISTS prod_product_type_clean_idx ON "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" (product_type_clean)`,
       `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
       `CREATE INDEX IF NOT EXISTS prod_category_trgm_idx ON "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" USING gin (category_name gin_trgm_ops)`,
       `CREATE INDEX IF NOT EXISTS prod_name_trgm_idx ON "AWIN_AFFILIAT_PRODUCTS_DATA_PROD" USING gin (product_name gin_trgm_ops)`,
@@ -64,7 +72,7 @@ export class AwinController implements OnApplicationBootstrap {
         this.logger.warn(`[Index] ensure failed (continuing): ${e?.message ?? e}`);
       }
     }
-    this.logger.log('[Index] trigram search indexes ensured');
+    this.logger.log('[Index] schema columns and trigram search indexes ensured');
   }
 
   private productsCache = new Map<string, { data: any, timestamp: number }>();
@@ -667,11 +675,14 @@ export class AwinController implements OnApplicationBootstrap {
       }),
       // Types carry counts because a category can surface a dozen of them and
       // the order matters to the user; the other facets are short lists.
-      (this.prisma.product as any).groupBy({
-        by: ['productTypeClean'],
-        where,
-        _count: { _all: true },
-      }),
+      // Degrade to no Type facet rather than failing the whole sidebar if this
+      // one query breaks — every other filter on the page depends on it too.
+      (this.prisma.product as any)
+        .groupBy({ by: ['productTypeClean'], where, _count: { _all: true } })
+        .catch((e: any) => {
+          this.logger.warn(`[Facets] type grouping failed: ${e?.message ?? e}`);
+          return [];
+        }),
     ]);
 
     // For prices, we can just do a simple findMany and calculate or use aggregate if available
