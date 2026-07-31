@@ -558,8 +558,14 @@ export class AwinController implements OnApplicationBootstrap {
     let uniqueIds = Array.from(new Set(allCategoryIds));
     let uniqueNames = Array.from(new Set(allCategoryNames));
 
-    // If no subcategories are requested, include the requested category name/terms
-    if (category && !subs) {
+    // Include the requested category's own terms alongside any subcategory
+    // terms. Sofas passes subs=one-seater,two-seater,three-seater — orphan
+    // categories no product actually uses — so matching on the subs alone
+    // returned zero rows and every facet came back empty, leaving the sidebar
+    // with only Price and Colour. Lighting is the exception: its subs-only
+    // narrowing is deliberate and paired with the furniture exclusion above.
+    // This mirrors the same fix already made in getAllProducts (bffdcbc).
+    if (category && (!subs || !this.isUnderLighting(targetCats[0]?.id, categoryMap))) {
       const categoryTerms = this.isUnderLighting(targetCats[0]?.id, categoryMap)
         ? [category]
         : this.getCategoryTerms(category);
