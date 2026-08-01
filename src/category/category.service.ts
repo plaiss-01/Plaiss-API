@@ -106,7 +106,11 @@ export class CategoryService {
         // somebody's child — hiding "Storage" had no visible effect at all.
         children: {
           where: isAwin !== undefined ? { isAwin } : undefined,
-          select: { id: true, name: true, slug: true, parentId: true },
+          // isAwin is selected so callers that fetch the whole tree (the
+          // category page needs it for breadcrumbs and subs) can still tell
+          // curated children from Awin ones. Without it the frontend cannot
+          // filter them and hidden categories reappear in the sidebar.
+          select: { id: true, name: true, slug: true, parentId: true, isAwin: true },
         },
         parent: { select: { id: true, name: true, slug: true } },
       },
