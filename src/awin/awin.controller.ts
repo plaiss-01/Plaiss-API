@@ -17,6 +17,32 @@ const CANONICAL_PRODUCT_TYPES = new Set(
   [...LIGHTING_RULES, ...FURNITURE_RULES].map(([label]) => label.toLowerCase()),
 );
 
+// Canonical types that must never surface under a given category, keyed by the
+// lowercased category name. Categories are matched by text against the feed's
+// breadcrumbs, so a term leaks into everything that merely contains the word:
+// "bed" pulled in 669 sofa beds and 393 armchairs against just 282 bed frames.
+// Excluding by canonical type is exact, where excluding by name would also
+// remove a genuine "Bed Frame with Sofa-Style Headboard".
+const CATEGORY_TYPE_EXCLUSIONS: Record<string, string[]> = {
+  bed: [
+    'Sofa Bed',
+    'Sofa',
+    'Corner Sofa',
+    'Armchair',
+    'Recliner',
+    'Chair',
+    'Dining Chair',
+    'Office Chair',
+    'Garden Chair',
+    'Bar Stool',
+    'Stool',
+    'Footstool',
+    'Bean Bag',
+    'Bench',
+    'Desk',
+  ],
+};
+
 @ApiTags('awin')
 @Controller('awin')
 export class AwinController implements OnApplicationBootstrap {
@@ -694,6 +720,20 @@ export class AwinController implements OnApplicationBootstrap {
           ],
         });
       }
+
+      // Per-category type exclusions. The null branch keeps products we could
+      // not type — dropping them would quietly delete ~7% of the catalogue.
+      const excludedTypes =
+        CATEGORY_TYPE_EXCLUSIONS[(category || '').toLowerCase()];
+      if (excludedTypes?.length) {
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+          OR: [
+            { productTypeClean: null },
+            { productTypeClean: { notIn: excludedTypes } },
+          ],
+        });
+      }
     }
 
     const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
@@ -995,6 +1035,20 @@ export class AwinController implements OnApplicationBootstrap {
           OR: [
             { productTypeClean: null },
             { productTypeClean: { not: 'Cushion' } },
+          ],
+        });
+      }
+
+      // Per-category type exclusions. The null branch keeps products we could
+      // not type — dropping them would quietly delete ~7% of the catalogue.
+      const excludedTypes =
+        CATEGORY_TYPE_EXCLUSIONS[(category || '').toLowerCase()];
+      if (excludedTypes?.length) {
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+          OR: [
+            { productTypeClean: null },
+            { productTypeClean: { notIn: excludedTypes } },
           ],
         });
       }
