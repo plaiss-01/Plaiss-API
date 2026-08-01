@@ -1264,61 +1264,78 @@ export class AwinController implements OnApplicationBootstrap {
 
       const { data: allCats, categoryMap } = await this.categoryService.getCategoryStructure();
       if (allCats && categoryMap) {
-        const target = allCats.find(c => c.slug.toLowerCase() === category.toLowerCase());
+        // Match on name as well as slug. The frontend sends the category NAME,
+        // so a slug-only lookup never resolved "Single Fabric Beds", which sent
+        // it to the keyword fallback below and returned 1,931 fabric sofas.
+        const needle = category.trim().toLowerCase();
+        const target = allCats.find(
+          c => c.slug.toLowerCase() === needle || (c.name || '').toLowerCase() === needle,
+        );
         if (target && target.parentId) {
           const parent = categoryMap.get(target.parentId);
           if (parent) {
             console.log(`[getAllProducts] Falling back to parent category: ${parent.name}`);
-            // Re-run search for parent
+
+            // Reuse the same display filters and type exclusions as a normal
+            // search. The old fallback queried on the parent name alone, so it
+            // bypassed the image requirement, the artificial/merchant
+            // exclusions, the colour-variant dedup and every category type
+            // rule — which is how sofas kept surfacing under bed pages.
+            const parentTerms = this.getCategoryTerms(parent.name);
+            const fallbackWhere: any = {
+              imageUrl: { not: null },
+              NOT: { imageUrl: '' },
+              AND: [
+                { NOT: { OR: ARTIFICIAL_TERMS.map(t => ({ name: { contains: t, mode: 'insensitive' as const } })) } },
+                { OR: [{ colourVariantNumber: 1 }, { colourVariantNumber: null }] },
+                { NOT: { OR: EXCLUDED_MERCHANTS.map(m => ({ merchant: { contains: m, mode: 'insensitive' as const } })) } },
+                {
+                  OR: parentTerms.flatMap(term => [
+                    { category: { contains: term, mode: 'insensitive' as const } },
+                    { merchantCategory: { contains: term, mode: 'insensitive' as const } },
+                  ]),
+                },
+              ],
+            };
+
+            const parentExclusions = this.getExcludedTypesFor(
+              parent.name,
+              [parent],
+              categoryMap,
+            );
+            if (parentExclusions?.length) {
+              fallbackWhere.AND.push({
+                OR: [
+                  { productTypeClean: null },
+                  { productTypeClean: { notIn: parentExclusions } },
+                ],
+              });
+            }
+
             const [fallbackData, fallbackTotal] = await Promise.all([
               (this.prisma.product as any).findMany({
-                where: {
-                  OR: [
-                    { category: { contains: parent.name, mode: 'insensitive' } }
-                  ]
-                },
+                where: fallbackWhere,
                 skip,
                 take: l,
                 orderBy: { createdAt: 'desc' },
                 select: this.productListSelect,
               }),
-              this.prisma.product.count({
-                where: {
-                  category: { contains: parent.name, mode: 'insensitive' }
-                }
-              }),
+              (this.prisma.product as any).count({ where: fallbackWhere }),
             ]);
             return { data: fallbackData.map((prod: any) => this.enhanceProductImages(prod)), meta: { total: fallbackTotal, page: p, limit: l, totalPages: Math.ceil(fallbackTotal / l) } };
           }
         }
       }
 
-      // If no parent or parent search failed, try keyword fallback
-      const words = category.split(/[\s&>|]+/).filter(w => w.length > 2);
-      if (words.length > 0) {
-        const fallbackWhere: any = {
-          OR: words.flatMap(word => [
-            { category: { contains: word, mode: 'insensitive' } },
-            { merchantCategory: { contains: word, mode: 'insensitive' } }
-          ])
-        };
-
-        const [fallbackData, fallbackTotal] = await Promise.all([
-          (this.prisma.product as any).findMany({
-            where: fallbackWhere,
-            skip,
-            take: l,
-            orderBy: { createdAt: 'desc' },
-            select: this.productListSelect,
-          }),
-          (this.prisma.product as any).count({ where: fallbackWhere }),
-        ]);
-
-        if (fallbackTotal > 0) {
-          data = fallbackData;
-          total = fallbackTotal;
-        }
-      }
+      // The keyword fallback that used to sit here split the category name on
+      // whitespace and matched ANY word longer than two characters, with none
+      // of the display filters applied. "Single Fabric Beds" became
+      // category contains 'single' OR 'fabric' OR 'beds' and returned 1,931
+      // products — mostly fabric sofas and recliners — on a bed page.
+      //
+      // A category with no products and no parent now simply returns empty,
+      // which is honest. The parent fallback above covers the real case.
+      console.log(`[getAllProducts] No parent for "${category}" — returning empty.`);
     }
 
     const products = data.map((p: any) => this.enhanceProductImages(p));
