@@ -40,6 +40,9 @@ const CATEGORY_TYPE_EXCLUSIONS: Record<string, string[]> = {
     'Bean Bag',
     'Bench',
     'Desk',
+    // Bedroom-adjacent but not a bed. Kept here initially, removed because it
+    // reads as clutter on a page whose job is to show beds.
+    'Bedside Table',
   ],
 };
 
