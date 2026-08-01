@@ -44,6 +44,23 @@ const CATEGORY_TYPE_EXCLUSIONS: Record<string, string[]> = {
     // reads as clutter on a page whose job is to show beds.
     'Bedside Table',
   ],
+  // 45 corner sofas were landing here, matched on "storage" appearing in
+  // descriptions like "corner sofa with storage footstool". Dressing tables
+  // stay — they have drawers and read as storage furniture.
+  storage: [
+    'Corner Sofa',
+    'Sofa',
+    'Sofa Bed',
+    'Armchair',
+    'Recliner',
+    'Chair',
+    'Dining Chair',
+    'Office Chair',
+    'Bar Stool',
+    'Stool',
+    'Footstool',
+    'Bean Bag',
+  ],
 };
 
 @ApiTags('awin')
