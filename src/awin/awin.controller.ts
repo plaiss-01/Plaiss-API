@@ -313,6 +313,33 @@ export class AwinController implements OnApplicationBootstrap {
     return false;
   }
 
+  /**
+   * Walks up from a category to find which CATEGORY_TYPE_EXCLUSIONS entry
+   * applies, so children inherit their parent's rules. Bed has eleven of them
+   * — Guest Beds, Bed Frames, Kids Bed Frames, King Size Fabric Beds and so on
+   * — and keying the exclusions on the requested category alone meant a sofa
+   * bed excluded from /bed still showed under /guest-beds.
+   */
+  private getExcludedTypesFor(
+    category?: string | null,
+    targetCats?: any[],
+    categoryMap?: Map<string, any>,
+  ): string[] | undefined {
+    const direct = CATEGORY_TYPE_EXCLUSIONS[(category || '').trim().toLowerCase()];
+    if (direct) return direct;
+
+    for (const cat of targetCats || []) {
+      let current = categoryMap?.get(cat.id) ?? cat;
+      while (current) {
+        const byName = CATEGORY_TYPE_EXCLUSIONS[(current.name || '').toLowerCase()];
+        const bySlug = CATEGORY_TYPE_EXCLUSIONS[(current.slug || '').toLowerCase()];
+        if (byName || bySlug) return byName || bySlug;
+        current = current.parentId ? categoryMap?.get(current.parentId) : null;
+      }
+    }
+    return undefined;
+  }
+
   private getCategoryTerms(name: string): string[] {
     const terms = [name];
     const lower = name.toLowerCase();
@@ -723,8 +750,11 @@ export class AwinController implements OnApplicationBootstrap {
 
       // Per-category type exclusions. The null branch keeps products we could
       // not type — dropping them would quietly delete ~7% of the catalogue.
-      const excludedTypes =
-        CATEGORY_TYPE_EXCLUSIONS[(category || '').toLowerCase()];
+      const excludedTypes = this.getExcludedTypesFor(
+        category,
+        targetCats,
+        categoryMap,
+      );
       if (excludedTypes?.length) {
         if (!where.AND) where.AND = [];
         where.AND.push({
@@ -1041,8 +1071,11 @@ export class AwinController implements OnApplicationBootstrap {
 
       // Per-category type exclusions. The null branch keeps products we could
       // not type — dropping them would quietly delete ~7% of the catalogue.
-      const excludedTypes =
-        CATEGORY_TYPE_EXCLUSIONS[(category || '').toLowerCase()];
+      const excludedTypes = this.getExcludedTypesFor(
+        category,
+        targetCats,
+        categoryMap,
+      );
       if (excludedTypes?.length) {
         if (!where.AND) where.AND = [];
         where.AND.push({
