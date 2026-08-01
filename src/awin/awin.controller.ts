@@ -8,6 +8,14 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ImportStatusService } from './import-status.service';
 import { CategoryService } from '../category/category.service';
+import { LIGHTING_RULES, FURNITURE_RULES } from './product-type.util';
+
+// Every label deriveProductType can produce. Used to tell a Type-facet value
+// (match product_type_clean exactly) from a Lighting sidebar category name
+// (match loosely against the raw breadcrumb), since both arrive as ?types=.
+const CANONICAL_PRODUCT_TYPES = new Set(
+  [...LIGHTING_RULES, ...FURNITURE_RULES].map(([label]) => label.toLowerCase()),
+);
 
 @ApiTags('awin')
 @Controller('awin')
@@ -102,6 +110,10 @@ export class AwinController implements OnApplicationBootstrap {
     productModelClean: true,
     colourClean: true,
     sizeStockStatusClean: true,
+    // Required by the frontend's Type filter. Without it the client falls back
+    // to substring-matching category/productType and silently drops most of
+    // the rows the server just matched.
+    productTypeClean: true,
     isRecliner: true,
     isSofaBed: true,
     baseSku: true,
@@ -1043,14 +1055,21 @@ export class AwinController implements OnApplicationBootstrap {
       if (types) {
         const array = types.replace(/\+/g, ' ').split(',').map(s => s.trim());
         andConditions.push({
-          // productTypeClean is the canonical Type facet; the looser
-          // productType/category matches stay so the Lighting sidebar, which
-          // passes raw category names through this same param, keeps working.
-          OR: array.flatMap(val => [
-            { productTypeClean: { equals: val, mode: 'insensitive' as const } },
-            { productType: { contains: val, mode: 'insensitive' as const } },
-            { category: { contains: val, mode: 'insensitive' as const } }
-          ])
+          // A canonical type matches product_type_clean exactly and nothing
+          // else. Mixing in the loose contains-matches made this endpoint
+          // describe a different set from the facet count — ?types=Armchair
+          // returned 531 rows by breadcrumb while the facet counted 533 by
+          // canonical type, and the two disagreed about which rows.
+          // Non-canonical values keep the loose match: the Lighting sidebar
+          // passes raw category names through this same parameter.
+          OR: array.flatMap((val): any[] =>
+            CANONICAL_PRODUCT_TYPES.has(val.trim().toLowerCase())
+              ? [{ productTypeClean: { equals: val, mode: 'insensitive' as const } }]
+              : [
+                  { productType: { contains: val, mode: 'insensitive' as const } },
+                  { category: { contains: val, mode: 'insensitive' as const } },
+                ],
+          )
         });
       }
       if (minPrice || maxPrice) {
