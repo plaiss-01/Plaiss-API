@@ -112,6 +112,17 @@ export const FURNITURE_RULES: readonly Rule[] = [
   ],
 ];
 
+/**
+ * Names specific enough to outrank the breadcrumb.
+ *
+ * Normally the breadcrumb wins, because it is the retailer's own
+ * classification. But retailers file sofa beds under generic bed categories —
+ * "Home & Garden > Beds > Guest Beds", "... > Bed Frames" — which types 63 of
+ * them as Bed Frame and lands sofa beds in the Bed category. "Sofa bed" in a
+ * product name is unambiguous in a way those breadcrumbs are not.
+ */
+const NAME_OVERRIDES: readonly Rule[] = [['Sofa Bed', /\bsofa\s*bed\b/i]];
+
 const LIGHTING_MERCHANTS = new Set(['lights.co.uk', 'lights.ie']);
 const LIGHTING_CONTEXT = /light|lamp|bulb|luminaire|lighting/i;
 
@@ -147,6 +158,12 @@ export function deriveProductType(
   const rules = isLightingProduct(merchant, category, merchantCategory, productType)
     ? LIGHTING_RULES
     : FURNITURE_RULES;
+
+  const name = (productName || '').trim();
+  if (rules === FURNITURE_RULES) {
+    const override = matchRules(name, NAME_OVERRIDES);
+    if (override) return override;
+  }
 
   const breadcrumb = (productType || '').trim();
   if (breadcrumb) {
