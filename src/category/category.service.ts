@@ -100,7 +100,14 @@ export class CategoryService {
         slug: true,
         isAwin: true,
         parentId: true,
-        children: { select: { id: true, name: true, slug: true, parentId: true } },
+        // Children must honour the same isAwin filter as the top level. The
+        // mega menu renders roots and then their children, so without this a
+        // category excluded from the curated set still appeared in the nav as
+        // somebody's child — hiding "Storage" had no visible effect at all.
+        children: {
+          where: isAwin !== undefined ? { isAwin } : undefined,
+          select: { id: true, name: true, slug: true, parentId: true },
+        },
         parent: { select: { id: true, name: true, slug: true } },
       },
       take: limit > 0 ? limit : 500,
