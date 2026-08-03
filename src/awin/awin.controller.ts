@@ -17,6 +17,40 @@ const CANONICAL_PRODUCT_TYPES = new Set(
   [...LIGHTING_RULES, ...FURNITURE_RULES].map(([label]) => label.toLowerCase()),
 );
 
+// /tables was 667 products of which only 25 were tables: 309 bar stools, 196
+// chairs, 99 stools and 30 table lamps, pulled in because "Dining Tables &
+// Chairs" and "table lamp" both contain the term. Filtering on the product NAME
+// does not fix it — "Dining Table With 4 Black Chairs" and "ORION Rosella table
+// lamp" both contain "table", so a name test still left 191 chairs and every
+// lamp. Only the canonical type separates a table from the chairs sold with it.
+//
+// Hoisted because the catalogue has BOTH a curated "Tables" child under
+// Furniture and a leftover singular "table" root, and the nav links to each.
+// getExcludedTypesFor matches the category name exactly, so both spellings
+// need the rule or one of the two pages stays contaminated.
+const TABLE_EXCLUSIONS = [
+  'Bar Stool',
+  'Stool',
+  'Footstool',
+  'Chair',
+  'Dining Chair',
+  'Office Chair',
+  'Garden Chair',
+  'Bench',
+  'Bean Bag',
+  'Cushion',
+  // Lighting leaking in on the word "table" - this is the ORION Rosella
+  // table lamp Rishi flagged.
+  'Table Lamp',
+  'Floor Lamp',
+  'Lamp Shade',
+  'Sofa',
+  'Corner Sofa',
+  'Sofa Bed',
+  'Armchair',
+  'Recliner',
+];
+
 // Canonical types that must never surface under a given category, keyed by the
 // lowercased category name. Categories are matched by text against the feed's
 // breadcrumbs, so a term leaks into everything that merely contains the word:
@@ -44,6 +78,15 @@ const CATEGORY_TYPE_EXCLUSIONS: Record<string, string[]> = {
     // reads as clutter on a page whose job is to show beds.
     'Bedside Table',
   ],
+  // /tables was 667 products of which only 25 were tables: 309 bar stools, 196
+  // chairs, 99 stools and 30 table lamps, pulled in because "Dining Tables &
+  // Chairs" and "table lamp" both contain the term. Filtering on the product
+  // NAME does not fix this — "Dining Table With 4 Black Chairs" and "ORION
+  // Rosella table lamp" both contain "table", so a name test still left 191
+  // chairs and every lamp. Excluding by canonical type is the only thing that
+  // separates a table from the chairs sold beside it.
+  tables: TABLE_EXCLUSIONS,
+  table: TABLE_EXCLUSIONS,
   // 45 corner sofas were landing here, matched on "storage" appearing in
   // descriptions like "corner sofa with storage footstool". Dressing tables
   // stay — they have drawers and read as storage furniture.
