@@ -383,6 +383,29 @@ export class AwinController implements OnApplicationBootstrap {
    * — and keying the exclusions on the requested category alone meant a sofa
    * bed excluded from /bed still showed under /guest-beds.
    */
+  /**
+   * Lighting sells fittings, not consumables, so bulbs are dropped from it.
+   *
+   * A product is only removed when BOTH its name and its description mention a
+   * bulb. Matching the description alone would delete lamps whose blurb reads
+   * "bulb not included" — 5,945 lighting products mention the word, against
+   * 4,779 whose name does.
+   *
+   * Written as an OR of negatives rather than NOT(a AND b) because description
+   * is nullable: in SQL, NOT(true AND NULL) is NULL, not true, so the NOT form
+   * would silently drop every lighting product that has no description.
+   */
+  private applyBulbExclusion(where: any) {
+    if (!where.AND) where.AND = [];
+    where.AND.push({
+      OR: [
+        { name: { not: { contains: 'bulb', mode: 'insensitive' } } },
+        { description: null },
+        { description: { not: { contains: 'bulb', mode: 'insensitive' } } },
+      ],
+    });
+  }
+
   private getExcludedTypesFor(
     category?: string | null,
     targetCats?: any[],
@@ -827,6 +850,10 @@ export class AwinController implements OnApplicationBootstrap {
           ],
         });
       }
+
+      if (this.isUnderLighting(targetCats[0]?.id, categoryMap)) {
+        this.applyBulbExclusion(where);
+      }
     }
 
     const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
@@ -1147,6 +1174,12 @@ export class AwinController implements OnApplicationBootstrap {
             { productTypeClean: { notIn: excludedTypes } },
           ],
         });
+      }
+
+      // Must mirror getFacets exactly or the grid and the filter counts
+      // disagree — these two have drifted apart twice before.
+      if (this.isUnderLighting(targetCats[0]?.id, categoryMap)) {
+        this.applyBulbExclusion(where);
       }
     }
 
