@@ -386,22 +386,26 @@ export class AwinController implements OnApplicationBootstrap {
   /**
    * Lighting sells fittings, not consumables, so bulbs are dropped from it.
    *
-   * A product is only removed when BOTH its name and its description mention a
-   * bulb. Matching the description alone would delete lamps whose blurb reads
-   * "bulb not included" — 5,945 lighting products mention the word, against
-   * 4,779 whose name does.
+   * Matched on the derived type rather than on text. The first version removed
+   * a product only when its name AND its description both said "bulb", which
+   * was deliberately cautious — matching the description alone would delete
+   * lamps whose blurb reads "bulb not included" (5,945 lighting products
+   * mention the word, against 4,779 whose name does). But that pairing only
+   * caught 2,570 and left 2,209 obvious bulbs behind, e.g. "Philips LED bulb
+   * E27 4.5 W 2,700 K opal 2-pack", whose description never repeats the word.
    *
-   * Written as an OR of negatives rather than NOT(a AND b) because description
-   * is nullable: in SQL, NOT(true AND NULL) is NULL, not true, so the NOT form
-   * would silently drop every lighting product that has no description.
+   * productTypeClean is the cleaner signal: it catches all 4,892 and cannot
+   * hit a lamp, because a lamp is never typed as a bulb.
+   *
+   * The null branch matters — productTypeClean is nullable and `notIn` alone
+   * evaluates to NULL for untyped rows, quietly dropping ~7% of the catalogue.
    */
   private applyBulbExclusion(where: any) {
     if (!where.AND) where.AND = [];
     where.AND.push({
       OR: [
-        { name: { not: { contains: 'bulb', mode: 'insensitive' } } },
-        { description: null },
-        { description: { not: { contains: 'bulb', mode: 'insensitive' } } },
+        { productTypeClean: null },
+        { productTypeClean: { not: 'Light Bulb' } },
       ],
     });
   }
