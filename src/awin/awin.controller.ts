@@ -485,6 +485,65 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   /**
+   * Resolve a subcategory that matches nothing to its parent, in place, before
+   * any user filters are applied.
+   *
+   * One/two/three-seater and Single Fabric Beds are orphan category records —
+   * no product is filed under those names — so their own terms match zero
+   * rows. getAllProducts used to paper over this with a post-hoc fallback that
+   * only ran on the UNFILTERED path, so the page listed the parent's products
+   * but every filter returned "No products match your filters": the strict
+   * query returned 0 and that 0 was the answer. getFacets meanwhile offered
+   * the parent's filter options, so the sidebar advertised counts nothing
+   * could satisfy.
+   *
+   * Substituting the parent up front means the grid, the facets and the
+   * filters all describe the same set, which is the invariant these two
+   * methods keep breaking.
+   *
+   * Only the category matching is swapped. The AND exclusions are derived by
+   * walking up the tree already, so they hold for the parent too.
+   *
+   * The parentId guard also keeps the extra count() off root categories, which
+   * are the hot paths and can never need this.
+   */
+  private async applyParentFallback(
+    where: any,
+    category: string | undefined,
+    targetCats: any[],
+    categoryMap: Map<string, any>,
+    label: string,
+  ): Promise<boolean> {
+    if (!category || !where.OR) return false;
+    const self = targetCats?.[0];
+    if (!self?.parentId) return false;
+
+    const parent = categoryMap.get(self.parentId);
+    if (!parent?.name) return false;
+
+    const matchCount = await (this.prisma.product as any).count({ where });
+    if (matchCount > 0) return false;
+
+    const parentTerms = this.getCategoryTerms(parent.name);
+    where.OR = [
+      {
+        OR: parentTerms.map(name => ({
+          category: { contains: name, mode: 'insensitive' as const },
+        })),
+      },
+      {
+        OR: parentTerms.map(name => ({
+          merchantCategory: { contains: name, mode: 'insensitive' as const },
+        })),
+      },
+    ];
+    this.logger.log(
+      `[${label}] "${category}" matched 0 rows, using parent "${parent.name}"`,
+    );
+    return true;
+  }
+
+  /**
    * Shared so getFacets, getAllProducts and the parent fallback cannot drift
    * apart — the type exclusions were duplicated inline and diverged twice.
    */
@@ -936,44 +995,7 @@ export class AwinController implements OnApplicationBootstrap {
       }
     }
 
-    // Fall back to the parent category when a subcategory matches nothing.
-    //
-    // getAllProducts already does this, which is why /two-seater still lists
-    // sofas — but getFacets did not, so the same page answered with every
-    // facet array empty and rendered a sidebar of just Price and Colour
-    // (those two render unconditionally). Rishi hit it on /two-seater; it was
-    // also silently breaking /one-seater, /three-seater and
-    // /single-fabric-beds. Same class of drift as the subs fix above: these
-    // two methods have to agree or the grid and the filters describe
-    // different sets.
-    //
-    // Only the category matching is swapped. The AND exclusions are already
-    // derived by walking up the tree, so they are correct for the parent too.
-    if (category && targetCats.length > 0 && where.OR) {
-      const matchCount = await (this.prisma.product as any).count({ where });
-      if (matchCount === 0) {
-        const self = targetCats[0];
-        const parent = self?.parentId ? categoryMap.get(self.parentId) : null;
-        if (parent?.name) {
-          const parentTerms = this.getCategoryTerms(parent.name);
-          where.OR = [
-            {
-              OR: parentTerms.map(name => ({
-                category: { contains: name, mode: 'insensitive' as const },
-              })),
-            },
-            {
-              OR: parentTerms.map(name => ({
-                merchantCategory: { contains: name, mode: 'insensitive' as const },
-              })),
-            },
-          ];
-          this.logger.log(
-            `[Facets] "${category}" matched 0 rows, using parent "${parent.name}"`,
-          );
-        }
-      }
-    }
+    await this.applyParentFallback(where, category, targetCats, categoryMap, 'Facets');
 
     const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
       (this.prisma.product as any).findMany({
@@ -1306,6 +1328,14 @@ export class AwinController implements OnApplicationBootstrap {
       if (this.isUnderLighting(targetCats[0]?.id, categoryMap)) {
         this.applyBulbExclusion(where);
       }
+
+      // Resolve an orphan subcategory to its parent BEFORE the filters below
+      // are applied. The old post-hoc fallback further down only ran when
+      // nothing was filtered, so /two-seater listed 4,803 sofas but every
+      // filter came back "No products match your filters" — and once getFacets
+      // started offering the parent's options, the sidebar was advertising
+      // counts that could never be satisfied.
+      await this.applyParentFallback(where, category, targetCats, categoryMap, 'Products');
     }
 
     // Server-side filtering
