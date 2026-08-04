@@ -106,6 +106,31 @@ const CATEGORY_TYPE_EXCLUSIONS: Record<string, string[]> = {
   ],
 };
 
+// Substrings that must never appear in a product NAME under a given category,
+// keyed by the lowercased category name.
+//
+// This is the deliberate exception to the rule above, not a softening of it.
+// Type-based exclusion cannot fix /stools: the offenders are SCS corner and
+// 4-seater sofas sold with an ottoman ("1 Brown Fabric Savazza 4 Seater Sofa
+// with Left Hand Facing Lounger & Two Ottoman Footstools"), and the type
+// deriver reads that trailing "Footstools" and types them Footstool — the same
+// type as the 137 genuine footstools on the page. Excluding the type would
+// empty the category of the thing it exists to sell.
+//
+// Measured before shipping, against the live 539 products on /stools: exactly
+// 7 contain "sofa" and all 7 are sofas; no Bar Stool and no Stool contains the
+// word, so there are no false positives. "sofa" is safe here where "table" was
+// not on /tables — a genuine stool never mentions a sofa, whereas "Dining
+// Table With 4 Black Chairs" and "ORION Rosella table lamp" both contain
+// "table". Keep that asymmetry in mind before adding a term here.
+//
+// Both spellings are keyed for the same reason as TABLE_EXCLUSIONS: the lookup
+// matches the category name exactly.
+const CATEGORY_NAME_EXCLUSIONS: Record<string, string[]> = {
+  stools: ['sofa'],
+  stool: ['sofa'],
+};
+
 @ApiTags('awin')
 @Controller('awin')
 export class AwinController implements OnApplicationBootstrap {
@@ -428,6 +453,51 @@ export class AwinController implements OnApplicationBootstrap {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Name-based counterpart to getExcludedTypesFor, with the same walk up the
+   * tree so subcategories inherit their parent's rules.
+   *
+   * Deliberately has no null branch, unlike every type exclusion in this file:
+   * product_name is non-nullable in the schema, so `NOT (name ILIKE ...)`
+   * cannot evaluate to NULL and cannot quietly drop rows the way a bare
+   * `notIn` on the nullable productTypeClean does.
+   */
+  private getExcludedNamesFor(
+    category?: string | null,
+    targetCats?: any[],
+    categoryMap?: Map<string, any>,
+  ): string[] | undefined {
+    const direct = CATEGORY_NAME_EXCLUSIONS[(category || '').trim().toLowerCase()];
+    if (direct) return direct;
+
+    for (const cat of targetCats || []) {
+      let current = categoryMap?.get(cat.id) ?? cat;
+      while (current) {
+        const byName = CATEGORY_NAME_EXCLUSIONS[(current.name || '').toLowerCase()];
+        const bySlug = CATEGORY_NAME_EXCLUSIONS[(current.slug || '').toLowerCase()];
+        if (byName || bySlug) return byName || bySlug;
+        current = current.parentId ? categoryMap?.get(current.parentId) : null;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Shared so getFacets, getAllProducts and the parent fallback cannot drift
+   * apart — the type exclusions were duplicated inline and diverged twice.
+   */
+  private applyNameExclusions(where: any, excludedNames?: string[]) {
+    if (!excludedNames?.length) return;
+    if (!where.AND) where.AND = [];
+    where.AND.push({
+      NOT: {
+        OR: excludedNames.map(term => ({
+          name: { contains: term, mode: 'insensitive' as const },
+        })),
+      },
+    });
   }
 
   private getCategoryTerms(name: string): string[] {
@@ -855,6 +925,12 @@ export class AwinController implements OnApplicationBootstrap {
         });
       }
 
+      // Per-category name exclusions, for the cases the type is wrong about.
+      this.applyNameExclusions(
+        where,
+        this.getExcludedNamesFor(category, targetCats, categoryMap),
+      );
+
       if (this.isUnderLighting(targetCats[0]?.id, categoryMap)) {
         this.applyBulbExclusion(where);
       }
@@ -1180,6 +1256,12 @@ export class AwinController implements OnApplicationBootstrap {
         });
       }
 
+      // Per-category name exclusions, for the cases the type is wrong about.
+      this.applyNameExclusions(
+        where,
+        this.getExcludedNamesFor(category, targetCats, categoryMap),
+      );
+
       // Must mirror getFacets exactly or the grid and the filter counts
       // disagree — these two have drifted apart twice before.
       if (this.isUnderLighting(targetCats[0]?.id, categoryMap)) {
@@ -1411,6 +1493,14 @@ export class AwinController implements OnApplicationBootstrap {
                 ],
               });
             }
+
+            // The fallback rebuilds its where from scratch, so it has to
+            // re-apply these too — the keyword fallback that skipped the
+            // display filters is exactly how the bed pages went wrong.
+            this.applyNameExclusions(
+              fallbackWhere,
+              this.getExcludedNamesFor(parent.name, [parent], categoryMap),
+            );
 
             const [fallbackData, fallbackTotal] = await Promise.all([
               (this.prisma.product as any).findMany({
