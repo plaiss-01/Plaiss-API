@@ -7,8 +7,10 @@ import {
   Param,
   Delete,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
+import { AdminKeyGuard } from '../common/admin-key.guard';
 
 @Controller('categories')
 export class CategoryController {
@@ -83,7 +85,9 @@ export class CategoryController {
     return this.categoryService.remove(id);
   }
 
+  // Wipes the entire category tree, which the mega menu is built from.
   @Delete()
+  @UseGuards(AdminKeyGuard)
   removeAll() {
     return this.categoryService.removeAll();
   }

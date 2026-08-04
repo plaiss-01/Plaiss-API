@@ -1,5 +1,6 @@
 // Triggering reload after prisma generate
-import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile, Logger, BadRequestException, OnApplicationBootstrap } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Query, UseInterceptors, UploadedFile, Logger, BadRequestException, OnApplicationBootstrap, UseGuards } from '@nestjs/common';
+import { AdminKeyGuard } from '../common/admin-key.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AwinService } from './awin.service';
@@ -658,6 +659,7 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   @Post('pipeline/extract-raw')
+  @UseGuards(AdminKeyGuard)
   @ApiOperation({ summary: 'Step 1: Extract AWIN data into AWIN_AFFILIAT_PRODUCTS_DATA_RAW' })
   async extractRaw(@Body() body: { url: string; replace?: boolean }) {
     if (!body || !body.url) {
@@ -678,6 +680,7 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   @Post('pipeline/upload-raw-csv')
+  @UseGuards(AdminKeyGuard)
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Step 1 alternative: Upload AWIN CSV into AWIN_AFFILIAT_PRODUCTS_DATA_RAW' })
   async uploadRawCsv(
@@ -702,6 +705,7 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   @Post('pipeline/transform-dev')
+  @UseGuards(AdminKeyGuard)
   @ApiOperation({ summary: 'Step 2: Transform AWIN RAW data into AWIN_AFFILIAT_PRODUCTS_DATA_DEV' })
   async transformDev(@Body() body: { replace?: boolean }) {
     const jobId = `awin-transform-dev-${Date.now()}`;
@@ -720,6 +724,7 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   @Post('pipeline/promote-prod')
+  @UseGuards(AdminKeyGuard)
   @ApiOperation({ summary: 'Step 3: Promote reviewed AWIN DEV data into AWIN_AFFILIAT_PRODUCTS_DATA_PROD' })
   async promoteProd(@Body() body: { replace?: boolean; syncProductTable?: boolean }) {
     const jobId = `awin-promote-prod-${Date.now()}`;
@@ -1856,6 +1861,7 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   @Delete('products/:id')
+  @UseGuards(AdminKeyGuard)
   @ApiOperation({ summary: 'Delete a product' })
   @ApiResponse({ status: 200, description: 'The product has been successfully deleted.' })
   async deleteProduct(@Param('id') id: string) {
@@ -1867,6 +1873,7 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   @Delete('products/by-merchant/:merchantName')
+  @UseGuards(AdminKeyGuard)
   @ApiOperation({ summary: 'Delete all products from a specific merchant (Hard Delete)' })
   @ApiResponse({ status: 200, description: 'All products from the merchant have been permanently removed.' })
   async deleteProductsByMerchant(@Param('merchantName') merchantName: string) {
@@ -1891,6 +1898,7 @@ export class AwinController implements OnApplicationBootstrap {
     return result;
   }
   @Post('products/bulk-delete')
+  @UseGuards(AdminKeyGuard)
   @ApiOperation({ summary: 'Bulk delete products by category and/or name/description pattern' })
   async bulkDeleteByFilter(
     @Body() body: { category?: string; namePattern?: string; descriptionPattern?: string },
@@ -1932,6 +1940,7 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   @Post('products/deduplicate')
+  @UseGuards(AdminKeyGuard)
   @ApiOperation({ summary: 'Run global product deduplication' })
   async deduplicate() {
     const result = await this.awinService.deduplicateProducts();

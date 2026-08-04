@@ -1,16 +1,112 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { PrismaService } from '../prisma.service';
 import { CreateContactSubmissionDto } from './dto/create-contact-submission.dto';
 
+/**
+ * Escapes the five HTML-significant characters. Submitted values are
+ * interpolated into the notification email, so without this a visitor can
+ * inject markup or links into the message our own staff open.
+ */
+function escapeHtml(value: string): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 @Injectable()
-export class ContactService {
+export class ContactService implements OnModuleInit {
   private readonly logger = new Logger(ContactService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  /**
+   * Created out-of-band with raw SQL rather than in schema.prisma on purpose:
+   * start.sh runs `prisma db push` on every boot, and these tables must not be
+   * at the mercy of that. Idempotent, so it is a no-op once they exist.
+   */
+  async onModuleInit() {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS contact_submissions (
+          id            BIGSERIAL PRIMARY KEY,
+          name          TEXT NOT NULL,
+          email         TEXT NOT NULL,
+          company       TEXT,
+          reason        TEXT,
+          message       TEXT NOT NULL,
+          emailed       BOOLEAN NOT NULL DEFAULT FALSE,
+          error         TEXT,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await this.prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS contact_submissions_created_at_idx ON contact_submissions (created_at DESC)`,
+      );
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS email_subscribers (
+          id            BIGSERIAL PRIMARY KEY,
+          email         TEXT NOT NULL UNIQUE,
+          source        TEXT,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      this.logger.log('Contact and subscriber tables verified.');
+    } catch (err) {
+      // Never block boot on this - the site must still serve products.
+      this.logger.error('Could not verify contact/subscriber tables', err as Error);
+    }
+  }
+
+  /**
+   * Stores an email address for the launch mailing list. Re-submitting an
+   * address is a no-op rather than an error, so the visitor never sees a
+   * failure for something they already did.
+   */
+  async subscribe(email: string, source = 'footer'): Promise<{ success: boolean; message: string }> {
+    const clean = (email || '').trim().toLowerCase();
+    if (!clean || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+      return { success: false, message: 'Please enter a valid email address.' };
+    }
+
+    try {
+      await this.prisma.$executeRaw`
+        INSERT INTO email_subscribers (email, source)
+        VALUES (${clean}, ${source})
+        ON CONFLICT (email) DO NOTHING
+      `;
+      this.logger.log(`Subscriber stored: ${clean}`);
+      return { success: true, message: "Thanks! You're on the list." };
+    } catch (err) {
+      this.logger.error(`Failed to store subscriber ${clean}`, err as Error);
+      throw new InternalServerErrorException('Could not save your email. Please try again.');
+    }
+  }
 
   async sendContactMessage(dto: CreateContactSubmissionDto): Promise<{ success: boolean; message: string }> {
     const { name, email, company, reason, message } = dto;
+
+    // Persist BEFORE attempting delivery. Previously an unconfigured SMTP host
+    // meant the enquiry existed only as a log line while the visitor was told
+    // it had been sent, so every enquiry since the module shipped was lost.
+    let submissionId: number | null = null;
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>`
+        INSERT INTO contact_submissions (name, email, company, reason, message)
+        VALUES (${name}, ${email}, ${company ?? null}, ${reason}, ${message})
+        RETURNING id
+      `;
+      submissionId = rows?.[0]?.id != null ? Number(rows[0].id) : null;
+    } catch (err) {
+      this.logger.error('Failed to store contact submission', err as Error);
+    }
 
     const receiverEmail = this.configService.get<string>('CONTACT_RECEIVER_EMAIL') || 'hello@plaiss.com';
     const smtpHost = this.configService.get<string>('SMTP_HOST');
@@ -47,29 +143,29 @@ export class ContactService {
             <div class="content">
               <div class="field-group">
                 <div class="label">Full Name</div>
-                <div class="value">${name}</div>
+                <div class="value">${escapeHtml(name)}</div>
               </div>
 
               <div class="field-group">
                 <div class="label">Email Address</div>
-                <div class="value"><a href="mailto:${email}">${email}</a></div>
+                <div class="value"><a href="mailto:${encodeURIComponent(email)}">${escapeHtml(email)}</a></div>
               </div>
 
               ${company ? `
               <div class="field-group">
                 <div class="label">Company</div>
-                <div class="value">${company}</div>
+                <div class="value">${escapeHtml(company)}</div>
               </div>
               ` : ''}
 
               <div class="field-group">
                 <div class="label">Reason for Contact</div>
-                <div class="value" style="font-weight: bold; color: #b8860b;">${reason}</div>
+                <div class="value" style="font-weight: bold; color: #b8860b;">${escapeHtml(reason)}</div>
               </div>
 
               <div class="field-group">
                 <div class="label">Message</div>
-                <div class="message-box">${message}</div>
+                <div class="message-box">${escapeHtml(message)}</div>
               </div>
             </div>
             <div class="footer">
@@ -94,16 +190,25 @@ ${message}
 Sent to ${receiverEmail}
     `.trim();
 
-    // If SMTP host is not configured, log to console in dev mode
+    // No SMTP configured: the enquiry is already safely in contact_submissions,
+    // so this is a genuine success from the visitor's point of view. It is only
+    // the notification email that is missing.
     if (!smtpHost || !smtpUser) {
       this.logger.warn(
-        `SMTP configuration is incomplete (SMTP_HOST/SMTP_USER missing). Logging contact submission to console:`,
+        `SMTP not configured (SMTP_HOST/SMTP_USER missing). Enquiry #${submissionId ?? '?'} stored in contact_submissions but NOT emailed.`,
       );
       this.logger.log(`Target: ${receiverEmail}\n${textContent}`);
 
+      if (submissionId === null) {
+        // Neither stored nor emailed - do not claim success.
+        throw new InternalServerErrorException(
+          'We could not record your message. Please email hello@plaiss.com directly.',
+        );
+      }
+
       return {
         success: true,
-        message: 'Message received and logged (Development mode).',
+        message: 'Thanks — your message has been received. We’ll be in touch shortly.',
       };
     }
 
@@ -128,13 +233,31 @@ Sent to ${receiverEmail}
       });
 
       this.logger.log(`Contact email successfully sent from ${email} to ${receiverEmail}`);
+      if (submissionId !== null) {
+        await this.prisma
+          .$executeRaw`UPDATE contact_submissions SET emailed = TRUE WHERE id = ${submissionId}`
+          .catch(() => undefined);
+      }
       return {
         success: true,
         message: 'Your message has been sent successfully.',
       };
     } catch (error) {
       this.logger.error(`Failed to send contact email to ${receiverEmail}:`, error);
-      throw new InternalServerErrorException('Failed to send contact email. Please try again later.');
+      if (submissionId !== null) {
+        await this.prisma
+          .$executeRaw`UPDATE contact_submissions SET error = ${String(
+            (error as Error)?.message ?? error,
+          ).slice(0, 500)} WHERE id = ${submissionId}`
+          .catch(() => undefined);
+        // The enquiry is stored and recoverable, so failing delivery of our own
+        // notification is not the visitor's problem to retry.
+        return {
+          success: true,
+          message: 'Thanks — your message has been received. We’ll be in touch shortly.',
+        };
+      }
+      throw new InternalServerErrorException('Failed to send your message. Please try again later.');
     }
   }
 }
