@@ -936,6 +936,45 @@ export class AwinController implements OnApplicationBootstrap {
       }
     }
 
+    // Fall back to the parent category when a subcategory matches nothing.
+    //
+    // getAllProducts already does this, which is why /two-seater still lists
+    // sofas — but getFacets did not, so the same page answered with every
+    // facet array empty and rendered a sidebar of just Price and Colour
+    // (those two render unconditionally). Rishi hit it on /two-seater; it was
+    // also silently breaking /one-seater, /three-seater and
+    // /single-fabric-beds. Same class of drift as the subs fix above: these
+    // two methods have to agree or the grid and the filters describe
+    // different sets.
+    //
+    // Only the category matching is swapped. The AND exclusions are already
+    // derived by walking up the tree, so they are correct for the parent too.
+    if (category && targetCats.length > 0 && where.OR) {
+      const matchCount = await (this.prisma.product as any).count({ where });
+      if (matchCount === 0) {
+        const self = targetCats[0];
+        const parent = self?.parentId ? categoryMap.get(self.parentId) : null;
+        if (parent?.name) {
+          const parentTerms = this.getCategoryTerms(parent.name);
+          where.OR = [
+            {
+              OR: parentTerms.map(name => ({
+                category: { contains: name, mode: 'insensitive' as const },
+              })),
+            },
+            {
+              OR: parentTerms.map(name => ({
+                merchantCategory: { contains: name, mode: 'insensitive' as const },
+              })),
+            },
+          ];
+          this.logger.log(
+            `[Facets] "${category}" matched 0 rows, using parent "${parent.name}"`,
+          );
+        }
+      }
+    }
+
     const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
       (this.prisma.product as any).findMany({
         where,
