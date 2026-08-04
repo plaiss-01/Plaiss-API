@@ -485,6 +485,73 @@ export class AwinController implements OnApplicationBootstrap {
   }
 
   /**
+   * Conditions for one or more size values. Extracted from the `sizes` filter
+   * so the implied size on a seater category matches byte-for-byte what
+   * ?sizes=2+Seater does — reimplementing it would have let the page and the
+   * filter disagree, which is the failure this file keeps repeating.
+   */
+  private buildSizeConditions(values: string[]): any[] {
+    return values.flatMap(val => {
+      const conds: any[] = [
+        { sizeStockStatusClean: { contains: val, mode: 'insensitive' as const } },
+        { productType: { contains: val, mode: 'insensitive' as const } },
+      ];
+      // X Seater → match product name ("2 seater", "2-seater", "2 seat")
+      const seaterMatch = val.match(/^(\d+)\s+seat(?:er)?s?$/i);
+      if (seaterMatch) {
+        const num = seaterMatch[1];
+        conds.push(
+          { name: { contains: `${num} seat`, mode: 'insensitive' as const } },
+          { name: { contains: `${num}-seat`, mode: 'insensitive' as const } },
+        );
+      }
+      if (/corner|chaise|l.shape/i.test(val)) {
+        conds.push(
+          { name: { contains: 'corner', mode: 'insensitive' as const } },
+          { name: { contains: 'chaise', mode: 'insensitive' as const } },
+          { name: { contains: 'l-shape', mode: 'insensitive' as const } },
+          { name: { contains: 'l shape', mode: 'insensitive' as const } },
+        );
+      }
+      if (/sofa.bed|sofabed/i.test(val)) {
+        conds.push(
+          { name: { contains: 'sofa bed', mode: 'insensitive' as const } },
+          { name: { contains: 'sofabed', mode: 'insensitive' as const } },
+        );
+      }
+      return conds;
+    });
+  }
+
+  /**
+   * Categories that are really a size of their parent rather than a set of
+   * their own.
+   *
+   * One/two/three-seater are orphan records no product is filed under, so
+   * they matched nothing and fell back to the parent's whole 4,803 sofas.
+   * That put 3-seaters, 4-seaters and an armchair on a page titled "Two
+   * Seater", and left Size offering "2 Seater" on the two-seater page.
+   *
+   * Applying the size makes the page mean what it says (1,363 for 2 Seater)
+   * and collapses the Size facet to a single option, which the frontend then
+   * hides — a one-option checkbox list filters nothing.
+   */
+  private static readonly CATEGORY_IMPLIED_SIZE: Record<string, string> = {
+    'one-seater': '1 Seater',
+    'two-seater': '2 Seater',
+    'three-seater': '3 Seater',
+    'four-seater': '4 Seater',
+  };
+
+  private applyImpliedSize(where: any, category?: string | null) {
+    const key = (category || '').trim().toLowerCase();
+    const size = AwinController.CATEGORY_IMPLIED_SIZE[key];
+    if (!size) return;
+    if (!where.AND) where.AND = [];
+    where.AND.push({ OR: this.buildSizeConditions([size]) });
+  }
+
+  /**
    * Resolve a subcategory that matches nothing to its parent, in place, before
    * any user filters are applied.
    *
@@ -996,6 +1063,7 @@ export class AwinController implements OnApplicationBootstrap {
     }
 
     await this.applyParentFallback(where, category, targetCats, categoryMap, 'Facets');
+    this.applyImpliedSize(where, category);
 
     const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
       (this.prisma.product as any).findMany({
@@ -1336,6 +1404,7 @@ export class AwinController implements OnApplicationBootstrap {
       // started offering the parent's options, the sidebar was advertising
       // counts that could never be satisfied.
       await this.applyParentFallback(where, category, targetCats, categoryMap, 'Products');
+      this.applyImpliedSize(where, category);
     }
 
     // Server-side filtering
@@ -1350,37 +1419,7 @@ export class AwinController implements OnApplicationBootstrap {
       }
       if (sizes) {
         const array = sizes.replace(/\+/g, ' ').split(',').map(s => s.trim());
-        const sizeConditions = array.flatMap(val => {
-          const conds: any[] = [
-            { sizeStockStatusClean: { contains: val, mode: 'insensitive' as const } },
-            { productType: { contains: val, mode: 'insensitive' as const } },
-          ];
-          // X Seater → match product name ("2 seater", "2-seater", "2 seat")
-          const seaterMatch = val.match(/^(\d+)\s+seat(?:er)?s?$/i);
-          if (seaterMatch) {
-            const num = seaterMatch[1];
-            conds.push(
-              { name: { contains: `${num} seat`, mode: 'insensitive' as const } },
-              { name: { contains: `${num}-seat`, mode: 'insensitive' as const } },
-            );
-          }
-          if (/corner|chaise|l.shape/i.test(val)) {
-            conds.push(
-              { name: { contains: 'corner', mode: 'insensitive' as const } },
-              { name: { contains: 'chaise', mode: 'insensitive' as const } },
-              { name: { contains: 'l-shape', mode: 'insensitive' as const } },
-              { name: { contains: 'l shape', mode: 'insensitive' as const } },
-            );
-          }
-          if (/sofa.bed|sofabed/i.test(val)) {
-            conds.push(
-              { name: { contains: 'sofa bed', mode: 'insensitive' as const } },
-              { name: { contains: 'sofabed', mode: 'insensitive' as const } },
-            );
-          }
-          return conds;
-        });
-        andConditions.push({ OR: sizeConditions });
+        andConditions.push({ OR: this.buildSizeConditions(array) });
       }
       if (materials) {
         const array = materials.replace(/\+/g, ' ').split(',').map(s => s.trim());
