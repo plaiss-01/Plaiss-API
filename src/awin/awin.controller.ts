@@ -1108,8 +1108,23 @@ export class AwinController implements OnApplicationBootstrap {
     const minPriceVal = priceAgg._min.discountedPriceClean ?? priceAgg._min.price;
     const maxPriceVal = priceAgg._max.discountedPriceClean ?? priceAgg._max.price;
 
+    // A category that already IS a size does not offer Size as a filter.
+    //
+    // Rishi: "when we go to 2 seater sofas, there in size again it's showing
+    // 2 seater sofas". Applying the implied size was not enough on its own —
+    // the size match is deliberately fuzzy (sizeStockStatusClean OR
+    // productType OR the name saying "2 seat"), so the matched set still
+    // holds several distinct stored sizes and the facet listed all of them.
+    // Emptying the group makes the frontend hide it, which is what it already
+    // does for any group with fewer than two options.
+    const impliesSize = Boolean(
+      AwinController.CATEGORY_IMPLIED_SIZE[(category || '').trim().toLowerCase()],
+    );
+
     const facetsResult = {
-      sizes: sizes.map((s: any) => s.sizeStockStatusClean).filter(Boolean),
+      sizes: impliesSize
+        ? []
+        : sizes.map((s: any) => s.sizeStockStatusClean).filter(Boolean),
       colors: colors.map((c: any) => c.colourClean).filter(Boolean),
       materials: materials.map((m: any) => m.productModelClean).filter(Boolean),
       merchants: merchants.map((m: any) => m.merchant).filter(Boolean),
