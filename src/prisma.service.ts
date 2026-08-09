@@ -11,7 +11,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor(configService: ConfigService) {
     const url = configService.get<string>('DATABASE_URL');
-    const logOptions = ['query', 'info', 'warn', 'error'] as const;
+    // 'query' deliberately excluded: it wrote every full SQL statement to
+    // stdout, which Container Apps ships to Log Analytics at per-GB rates -
+    // pure noise with a monthly bill attached. Approved by Raphael 2026-08-09.
+    const logOptions = ['info', 'warn', 'error'] as const;
 
     if (!url || (!url.startsWith('postgresql://') && !url.startsWith('postgres://'))) {
       throw new Error('DATABASE_URL must be a valid PostgreSQL connection string.');
