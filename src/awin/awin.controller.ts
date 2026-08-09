@@ -224,6 +224,20 @@ export class AwinController implements OnApplicationBootstrap {
     productModelClean: true,
     // The Material facet's real source once the backfill has run.
     materialClean: true,
+    // Raphael's field-spec columns - empty until the re-import runs, but
+    // selected now so the frontend can consume them the moment data lands.
+    // NOTE these columns MUST exist in the database before this deploys
+    // (idempotent ALTERs are run manually first): selecting a missing
+    // column 500s every uncached products request.
+    alternateImage: true,
+    alternateImageTwo: true,
+    alternateImageThree: true,
+    alternateImageFour: true,
+    deliveryTime: true,
+    deliveryCost: true,
+    merchantProductCategoryPath: true,
+    custom4: true,
+    modelNumber: true,
     colourClean: true,
     sizeStockStatusClean: true,
     // Required by the frontend's Type filter. Without it the client falls back

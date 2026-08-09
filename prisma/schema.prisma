@@ -56,6 +56,18 @@ model Product {
   
   // Missing columns from DB added:
 
+  // Raphael's field-spec columns (media, delivery, colour/model signals),
+  // persisted from the feed at import time. Empty until the next re-import.
+  alternateImage              String? @map("alternate_image")
+  alternateImageTwo           String? @map("alternate_image_two")
+  alternateImageThree         String? @map("alternate_image_three")
+  alternateImageFour          String? @map("alternate_image_four")
+  deliveryTime                String? @map("delivery_time")
+  deliveryCost                String? @map("delivery_cost")
+  merchantProductCategoryPath String? @map("merchant_product_category_path")
+  custom4                     String? @map("custom_4")
+  modelNumber                 String? @map("model_number")
+
   rawRow               String?   @map("raw_row")
   transformedAt        DateTime? @map("transformed_at")
   salesDiscount        String?   @map("sales_discount")

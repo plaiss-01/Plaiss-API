@@ -533,6 +533,8 @@ export class AwinService {
       'categoryId', 'brandName', 'colour', 'productModel', 'productType', 'productModelClean',
       'colourClean', 'sizeStockStatusClean', 'productTypeClean', 'materialClean', 'isRecliner', 'isSofaBed', 'baseSku',
       'colourVariantNumber', 'originalPriceClean', 'discountedPriceClean', 'saving',
+      'alternateImage', 'alternateImageTwo', 'alternateImageThree', 'alternateImageFour',
+      'deliveryTime', 'deliveryCost', 'merchantProductCategoryPath', 'custom4', 'modelNumber',
       'salesDiscount', 'rawRow'
     ];
 
@@ -596,6 +598,8 @@ export class AwinService {
             category_id, brand_name, colour, product_model, product_type, product_model_clean,
             colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
             colour_variant_number, original_price_clean, discounted_price_clean, saving,
+            alternate_image, alternate_image_two, alternate_image_three, alternate_image_four,
+            delivery_time, delivery_cost, merchant_product_category_path, custom_4, model_number,
             sales_discount, raw_row
           )
           VALUES ${placeholders.join(', ')}
@@ -628,6 +632,15 @@ export class AwinService {
             original_price_clean = EXCLUDED.original_price_clean,
             discounted_price_clean = EXCLUDED.discounted_price_clean,
             saving = EXCLUDED.saving,
+            alternate_image = EXCLUDED.alternate_image,
+            alternate_image_two = EXCLUDED.alternate_image_two,
+            alternate_image_three = EXCLUDED.alternate_image_three,
+            alternate_image_four = EXCLUDED.alternate_image_four,
+            delivery_time = EXCLUDED.delivery_time,
+            delivery_cost = EXCLUDED.delivery_cost,
+            merchant_product_category_path = EXCLUDED.merchant_product_category_path,
+            custom_4 = EXCLUDED.custom_4,
+            model_number = EXCLUDED.model_number,
             sales_discount = EXCLUDED.sales_discount,
             raw_row = EXCLUDED.raw_row,
             transformed_at = NOW()
@@ -716,6 +729,8 @@ export class AwinService {
         category_id, brand_name, colour, product_model, product_type, product_model_clean,
         colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
         colour_variant_number, original_price_clean, discounted_price_clean, saving,
+        alternate_image, alternate_image_two, alternate_image_three, alternate_image_four,
+        delivery_time, delivery_cost, merchant_product_category_path, custom_4, model_number,
         sales_discount, raw_row, transformed_at, loaded_at
       )
       SELECT
@@ -724,6 +739,8 @@ export class AwinService {
         category_id, brand_name, colour, product_model, product_type, product_model_clean,
         colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
         colour_variant_number, original_price_clean, discounted_price_clean, saving,
+        alternate_image, alternate_image_two, alternate_image_three, alternate_image_four,
+        delivery_time, delivery_cost, merchant_product_category_path, custom_4, model_number,
         sales_discount, raw_row, transformed_at, NOW()
       FROM public."${this.awinPipelineTables.dev}"
       ON CONFLICT (aw_product_id) DO UPDATE SET
@@ -755,6 +772,15 @@ export class AwinService {
         original_price_clean = EXCLUDED.original_price_clean,
         discounted_price_clean = EXCLUDED.discounted_price_clean,
         saving = EXCLUDED.saving,
+        alternate_image = EXCLUDED.alternate_image,
+        alternate_image_two = EXCLUDED.alternate_image_two,
+        alternate_image_three = EXCLUDED.alternate_image_three,
+        alternate_image_four = EXCLUDED.alternate_image_four,
+        delivery_time = EXCLUDED.delivery_time,
+        delivery_cost = EXCLUDED.delivery_cost,
+        merchant_product_category_path = EXCLUDED.merchant_product_category_path,
+        custom_4 = EXCLUDED.custom_4,
+        model_number = EXCLUDED.model_number,
         sales_discount = EXCLUDED.sales_discount,
         raw_row = EXCLUDED.raw_row,
         transformed_at = EXCLUDED.transformed_at,
@@ -877,6 +903,15 @@ export class AwinService {
       ['original_price_clean', 'DOUBLE PRECISION'],
       ['discounted_price_clean', 'DOUBLE PRECISION'],
       ['saving', 'DOUBLE PRECISION'],
+      ['alternate_image', 'TEXT'],
+      ['alternate_image_two', 'TEXT'],
+      ['alternate_image_three', 'TEXT'],
+      ['alternate_image_four', 'TEXT'],
+      ['delivery_time', 'TEXT'],
+      ['delivery_cost', 'TEXT'],
+      ['merchant_product_category_path', 'TEXT'],
+      ['custom_4', 'TEXT'],
+      ['model_number', 'TEXT'],
       ['sales_discount', 'TEXT'],
       ...(includeLoadedAt ? [['loaded_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()']] : []),
     ];
@@ -920,6 +955,15 @@ export class AwinService {
         original_price_clean DOUBLE PRECISION,
         discounted_price_clean DOUBLE PRECISION,
         saving DOUBLE PRECISION,
+        alternate_image TEXT,
+        alternate_image_two TEXT,
+        alternate_image_three TEXT,
+        alternate_image_four TEXT,
+        delivery_time TEXT,
+        delivery_cost TEXT,
+        merchant_product_category_path TEXT,
+        custom_4 TEXT,
+        model_number TEXT,
         sales_discount TEXT,
         raw_row JSONB NOT NULL,
         transformed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -996,7 +1040,11 @@ export class AwinService {
     const hasLED = /\bLED\b/i.test(name) || /\bLED\b/i.test(desc);
     const hasLightingType = /\b(wall|floor|table|lamp)s?\b/i.test(type) || /\b(wall|floor|table|lamp)s?\b/i.test(path);
     const isLighting = hasLED || hasLightingType;
-    const isOtherDesired = /sofa|couch|settee|chair|rug|decor|plant|kitchen/i.test(sofaText);
+    // tables?/desks? are word-bounded so "portable"/"vegetable" don't match.
+    // Approved by Raphael 2026-08-09 so /tables has real depth (the old
+    // filter only let tables in via dining-set names - ~25 catalogue-wide).
+    // Beds stay OUT deliberately: Debenhams alone ships 112k divan beds.
+    const isOtherDesired = /sofa|couch|settee|chair|rug|decor|plant|kitchen|\btables?\b|\bdesks?\b/i.test(sofaText);
     const isArtificial = /artificial|plastic|fake|faux|synthetic/i.test(name);
 
     if (
@@ -1080,6 +1128,15 @@ export class AwinService {
       originalPriceClean,
       discountedPriceClean,
       saving,
+      alternateImage: getVal(['alternate_image']),
+      alternateImageTwo: getVal(['alternate_image_two']),
+      alternateImageThree: getVal(['alternate_image_three']),
+      alternateImageFour: getVal(['alternate_image_four']),
+      deliveryTime: getVal(['delivery_time']),
+      deliveryCost: getVal(['delivery_cost']),
+      merchantProductCategoryPath: getVal(['merchant_product_category_path']),
+      custom4: getVal(['custom_4']),
+      modelNumber: getVal(['model_number']),
       salesDiscount: saving >= 5 ? 'Yes' : 'No',
       rawRow: row,
     };
@@ -1093,9 +1150,11 @@ export class AwinService {
         category_id, brand_name, colour, product_model, product_type, product_model_clean,
         colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
         colour_variant_number, original_price_clean, discounted_price_clean, saving,
+        alternate_image, alternate_image_two, alternate_image_three, alternate_image_four,
+        delivery_time, delivery_cost, merchant_product_category_path, custom_4, model_number,
         sales_discount, raw_row
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40::jsonb)
       ON CONFLICT (aw_product_id) DO UPDATE SET
         merchant_product_id = EXCLUDED.merchant_product_id,
         product_name = EXCLUDED.product_name,
@@ -1125,6 +1184,15 @@ export class AwinService {
         original_price_clean = EXCLUDED.original_price_clean,
         discounted_price_clean = EXCLUDED.discounted_price_clean,
         saving = EXCLUDED.saving,
+        alternate_image = EXCLUDED.alternate_image,
+        alternate_image_two = EXCLUDED.alternate_image_two,
+        alternate_image_three = EXCLUDED.alternate_image_three,
+        alternate_image_four = EXCLUDED.alternate_image_four,
+        delivery_time = EXCLUDED.delivery_time,
+        delivery_cost = EXCLUDED.delivery_cost,
+        merchant_product_category_path = EXCLUDED.merchant_product_category_path,
+        custom_4 = EXCLUDED.custom_4,
+        model_number = EXCLUDED.model_number,
         sales_discount = EXCLUDED.sales_discount,
         raw_row = EXCLUDED.raw_row,
         transformed_at = NOW()`,
@@ -1158,6 +1226,15 @@ export class AwinService {
       row.originalPriceClean,
       row.discountedPriceClean,
       row.saving,
+      row.alternateImage || null,
+      row.alternateImageTwo || null,
+      row.alternateImageThree || null,
+      row.alternateImageFour || null,
+      row.deliveryTime || null,
+      row.deliveryCost || null,
+      row.merchantProductCategoryPath || null,
+      row.custom4 || null,
+      row.modelNumber || null,
       row.salesDiscount || null,
       JSON.stringify(row.rawRow),
     );
