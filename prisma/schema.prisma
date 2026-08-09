@@ -42,6 +42,9 @@ model Product {
   // declared here: start.sh runs `prisma db push` on every boot, which drops
   // any column the schema doesn't know about.
   productTypeClean      String? @map("product_type_clean")
+  // Canonical material behind the "Material" facet (Raphael's "Product
+  // Type": Fabric/Leather/Wood/Metal...). Same schema rule as above.
+  materialClean         String? @map("material_clean")
 
   isRecliner           String? @map("is_recliner")
   isSofaBed            String? @map("is_sofa_bed")

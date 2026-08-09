@@ -222,6 +222,8 @@ export class AwinController implements OnApplicationBootstrap {
     createdAt: true,
     rawRow: true,
     productModelClean: true,
+    // The Material facet's real source once the backfill has run.
+    materialClean: true,
     colourClean: true,
     sizeStockStatusClean: true,
     // Required by the frontend's Type filter. Without it the client falls back
@@ -1065,7 +1067,7 @@ export class AwinController implements OnApplicationBootstrap {
     await this.applyParentFallback(where, category, targetCats, categoryMap, 'Facets');
     this.applyImpliedSize(where, category);
 
-    const [sizes, colors, materials, merchants, typeGroups] = await Promise.all([
+    const [sizes, colors, materials, merchants, typeGroups, materialGroups] = await Promise.all([
       (this.prisma.product as any).findMany({
         where,
         distinct: ['sizeStockStatusClean'],
@@ -1094,6 +1096,16 @@ export class AwinController implements OnApplicationBootstrap {
         .groupBy({ by: ['productTypeClean'], where, _count: { _all: true } })
         .catch((e: any) => {
           this.logger.warn(`[Facets] type grouping failed: ${e?.message ?? e}`);
+          return [];
+        }),
+      // Real materials (material_clean, derived from name + merchant category
+      // + description). Until the backfill has run this comes back empty and
+      // the legacy product_model_clean list keeps serving, so deploy order
+      // does not matter.
+      (this.prisma.product as any)
+        .groupBy({ by: ['materialClean'], where, _count: { _all: true } })
+        .catch((e: any) => {
+          this.logger.warn(`[Facets] material grouping failed: ${e?.message ?? e}`);
           return [];
         }),
     ]);
@@ -1126,7 +1138,15 @@ export class AwinController implements OnApplicationBootstrap {
         ? []
         : sizes.map((s: any) => s.sizeStockStatusClean).filter(Boolean),
       colors: colors.map((c: any) => c.colourClean).filter(Boolean),
-      materials: materials.map((m: any) => m.productModelClean).filter(Boolean),
+      materials: (() => {
+        const derived = materialGroups
+          .filter((m: any) => m.materialClean)
+          .sort((a: any, b: any) => b._count._all - a._count._all)
+          .map((m: any) => m.materialClean);
+        return derived.length > 0
+          ? derived
+          : materials.map((m: any) => m.productModelClean).filter(Boolean);
+      })(),
       merchants: merchants.map((m: any) => m.merchant).filter(Boolean),
       types: typeGroups
         .filter((t: any) => t.productTypeClean)
@@ -1438,7 +1458,15 @@ export class AwinController implements OnApplicationBootstrap {
       }
       if (materials) {
         const array = materials.replace(/\+/g, ' ').split(',').map(s => s.trim());
-        andConditions.push({ OR: array.map(val => ({ productModelClean: { contains: val, mode: 'insensitive' as const } })) });
+        // Match the derived material_clean exactly, keeping the legacy
+        // product_model_clean substring match so pre-backfill values
+        // (Fabric/Leather) and cached frontends keep working.
+        andConditions.push({
+          OR: array.flatMap((val): any[] => [
+            { materialClean: { equals: val, mode: 'insensitive' as const } },
+            { productModelClean: { contains: val, mode: 'insensitive' as const } },
+          ]),
+        });
       }
       if (merchants) {
         const array = merchants.replace(/\+/g, ' ').split(',').map(s => s.trim());

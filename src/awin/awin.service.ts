@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import { deriveProductType } from './product-type.util';
+import { deriveMaterial } from './material.util';
 
 import { ImportStatusService } from './import-status.service';
 import { CategoryService } from '../category/category.service';
@@ -530,7 +531,7 @@ export class AwinService {
       'awProductId', 'merchantProductId', 'productName', 'slug', 'description', 'price',
       'currency', 'imageUrl', 'productUrl', 'merchantName', 'categoryName', 'merchantCategory',
       'categoryId', 'brandName', 'colour', 'productModel', 'productType', 'productModelClean',
-      'colourClean', 'sizeStockStatusClean', 'productTypeClean', 'isRecliner', 'isSofaBed', 'baseSku',
+      'colourClean', 'sizeStockStatusClean', 'productTypeClean', 'materialClean', 'isRecliner', 'isSofaBed', 'baseSku',
       'colourVariantNumber', 'originalPriceClean', 'discountedPriceClean', 'saving',
       'salesDiscount', 'rawRow'
     ];
@@ -593,7 +594,7 @@ export class AwinService {
             aw_product_id, merchant_product_id, product_name, slug, description, search_price,
             currency, image_url, product_url, merchant_name, category_name, merchant_category,
             category_id, brand_name, colour, product_model, product_type, product_model_clean,
-            colour_clean, size_stock_status_clean, product_type_clean, is_recliner, is_sofa_bed, base_sku,
+            colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
             colour_variant_number, original_price_clean, discounted_price_clean, saving,
             sales_discount, raw_row
           )
@@ -619,6 +620,7 @@ export class AwinService {
             colour_clean = EXCLUDED.colour_clean,
             size_stock_status_clean = EXCLUDED.size_stock_status_clean,
         product_type_clean = EXCLUDED.product_type_clean,
+            material_clean = EXCLUDED.material_clean,
             is_recliner = EXCLUDED.is_recliner,
             is_sofa_bed = EXCLUDED.is_sofa_bed,
             base_sku = EXCLUDED.base_sku,
@@ -712,7 +714,7 @@ export class AwinService {
         aw_product_id, merchant_product_id, product_name, slug, description, search_price,
         currency, image_url, product_url, merchant_name, category_name, merchant_category,
         category_id, brand_name, colour, product_model, product_type, product_model_clean,
-        colour_clean, size_stock_status_clean, product_type_clean, is_recliner, is_sofa_bed, base_sku,
+        colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
         colour_variant_number, original_price_clean, discounted_price_clean, saving,
         sales_discount, raw_row, transformed_at, loaded_at
       )
@@ -720,7 +722,7 @@ export class AwinService {
         aw_product_id, merchant_product_id, product_name, slug, description, search_price,
         currency, image_url, product_url, merchant_name, category_name, merchant_category,
         category_id, brand_name, colour, product_model, product_type, product_model_clean,
-        colour_clean, size_stock_status_clean, product_type_clean, is_recliner, is_sofa_bed, base_sku,
+        colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
         colour_variant_number, original_price_clean, discounted_price_clean, saving,
         sales_discount, raw_row, transformed_at, NOW()
       FROM public."${this.awinPipelineTables.dev}"
@@ -745,6 +747,7 @@ export class AwinService {
         colour_clean = EXCLUDED.colour_clean,
         size_stock_status_clean = EXCLUDED.size_stock_status_clean,
         product_type_clean = EXCLUDED.product_type_clean,
+        material_clean = EXCLUDED.material_clean,
         is_recliner = EXCLUDED.is_recliner,
         is_sofa_bed = EXCLUDED.is_sofa_bed,
         base_sku = EXCLUDED.base_sku,
@@ -866,6 +869,7 @@ export class AwinService {
       ['colour_clean', 'TEXT'],
       ['size_stock_status_clean', 'TEXT'],
       ['product_type_clean', 'TEXT'],
+      ['material_clean', 'TEXT'],
       ['is_recliner', 'TEXT'],
       ['is_sofa_bed', 'TEXT'],
       ['base_sku', 'TEXT'],
@@ -908,6 +912,7 @@ export class AwinService {
         colour_clean TEXT,
         size_stock_status_clean TEXT,
         product_type_clean TEXT,
+        material_clean TEXT,
         is_recliner TEXT,
         is_sofa_bed TEXT,
         base_sku TEXT,
@@ -1029,6 +1034,11 @@ export class AwinService {
       categoryName,
       getVal(['merchant_category', 'merchantCategory']),
     );
+    const materialClean = deriveMaterial(
+      getVal(['product_name', 'productName']),
+      getVal(['merchant_category', 'merchantCategory']),
+      getVal(['description', 'product_description']),
+    );
     const originalPriceClean = this.parseAwinPrice(
       this.getFirstAwinValue(row, ['rrp_price', 'rrp', 'was_price', 'wasPrice', 'base_price', 'basePrice']),
     );
@@ -1062,6 +1072,7 @@ export class AwinService {
       colourClean,
       sizeStockStatusClean,
       productTypeClean,
+      materialClean,
       isRecliner: this.inferAwinIsRecliner(row, getVal),
       isSofaBed: this.inferAwinIsSofaBed(row, getVal),
       baseSku: this.extractBaseSkuFromAwinRow(row),
@@ -1080,11 +1091,11 @@ export class AwinService {
         aw_product_id, merchant_product_id, product_name, slug, description, search_price,
         currency, image_url, product_url, merchant_name, category_name, merchant_category,
         category_id, brand_name, colour, product_model, product_type, product_model_clean,
-        colour_clean, size_stock_status_clean, product_type_clean, is_recliner, is_sofa_bed, base_sku,
+        colour_clean, size_stock_status_clean, product_type_clean, material_clean, is_recliner, is_sofa_bed, base_sku,
         colour_variant_number, original_price_clean, discounted_price_clean, saving,
         sales_discount, raw_row
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31::jsonb)
       ON CONFLICT (aw_product_id) DO UPDATE SET
         merchant_product_id = EXCLUDED.merchant_product_id,
         product_name = EXCLUDED.product_name,
@@ -1106,6 +1117,7 @@ export class AwinService {
         colour_clean = EXCLUDED.colour_clean,
         size_stock_status_clean = EXCLUDED.size_stock_status_clean,
         product_type_clean = EXCLUDED.product_type_clean,
+        material_clean = EXCLUDED.material_clean,
         is_recliner = EXCLUDED.is_recliner,
         is_sofa_bed = EXCLUDED.is_sofa_bed,
         base_sku = EXCLUDED.base_sku,
@@ -1138,6 +1150,7 @@ export class AwinService {
       row.colourClean || null,
       row.sizeStockStatusClean || null,
       row.productTypeClean || null,
+      row.materialClean || null,
       row.isRecliner || null,
       row.isSofaBed || null,
       row.baseSku || null,
