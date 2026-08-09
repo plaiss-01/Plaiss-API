@@ -83,6 +83,11 @@ model Category {
   name      String   @unique
   slug      String   @unique
   isAwin    Boolean  @default(true)
+  // Admin-uploaded category art: mega-menu thumbnail + category-page hero.
+  // Declared here for the same reason as productTypeClean above - boot-time
+  // `prisma db push` drops any column the schema doesn't know about.
+  imageUrl       String?
+  headerImageUrl String?
   parentId  String?
   parent    Category?  @relation("CategoryToCategory", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   children  Category[] @relation("CategoryToCategory")

@@ -47,7 +47,7 @@ export class CategoryService {
       .replace(/^-+|-+$/g, '');
   }
 
-  async create(data: { name: string; parentId?: string; isAwin?: boolean }) {
+  async create(data: { name: string; parentId?: string; isAwin?: boolean; imageUrl?: string; headerImageUrl?: string }) {
     const slug = this.slugify(data.name);
     
     // Check if category already exists by name or slug
@@ -69,6 +69,8 @@ export class CategoryService {
         slug,
         isAwin: data.isAwin !== undefined ? data.isAwin : false, // Default to false for manual
         parentId: data.parentId || null,
+        imageUrl: data.imageUrl || null,
+        headerImageUrl: data.headerImageUrl || null,
       },
       include: {
         children: true,
@@ -99,6 +101,11 @@ export class CategoryService {
         name: true,
         slug: true,
         isAwin: true,
+        // Without these two in the explicit select, the admin's uploads can
+        // never reach the mega menu or the category hero, whatever the
+        // update endpoint stores.
+        imageUrl: true,
+        headerImageUrl: true,
         parentId: true,
         // Children must honour the same isAwin filter as the top level. The
         // mega menu renders roots and then their children, so without this a
@@ -110,7 +117,9 @@ export class CategoryService {
           // category page needs it for breadcrumbs and subs) can still tell
           // curated children from Awin ones. Without it the frontend cannot
           // filter them and hidden categories reappear in the sidebar.
-          select: { id: true, name: true, slug: true, parentId: true, isAwin: true },
+          // imageUrl is here because the mega menu renders child.imageUrl
+          // for its preview thumbnails.
+          select: { id: true, name: true, slug: true, parentId: true, isAwin: true, imageUrl: true, headerImageUrl: true },
         },
         parent: { select: { id: true, name: true, slug: true } },
       },
@@ -191,6 +200,14 @@ export class CategoryService {
     
     if (data.parentId !== undefined) {
       updateData.parentId = data.parentId === 'null' ? null : data.parentId;
+    }
+
+    if (data.imageUrl !== undefined) {
+      updateData.imageUrl = data.imageUrl;
+    }
+
+    if (data.headerImageUrl !== undefined) {
+      updateData.headerImageUrl = data.headerImageUrl;
     }
 
     if (Object.keys(updateData).length === 0) {
