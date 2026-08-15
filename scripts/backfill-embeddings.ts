@@ -9,9 +9,10 @@
  * changes a photo always changes the URL, and hashing every catalogue image
  * body would be far more expensive for no extra signal).
  *
- * Concurrency is capped at 2 in-flight RunPod calls to match the endpoint's
- * current max workers (4xecm810lylvnt, maxWorkers=2) - going higher just
- * queues, it doesn't go faster.
+ * Concurrency is capped at 4 in-flight RunPod calls to match the endpoint's
+ * current max workers (4xecm810lylvnt, maxWorkers=4, bumped from 2 for the
+ * initial full-catalogue backfill) - going higher just queues, it doesn't
+ * go faster.
  *
  * Note: does not clean up product_embeddings rows for products removed from
  * the catalogue (orphans are harmlessly excluded by findSimilar's INNER
@@ -34,7 +35,7 @@ import {
 } from '../src/embeddings/embeddings.sql';
 
 const RUNPOD_API = 'https://api.runpod.ai/v2';
-const CONCURRENCY = 2;
+const CONCURRENCY = 4;
 const dryRun = process.argv.includes('--dry-run');
 const limitArgIndex = process.argv.indexOf('--limit');
 const limit =
