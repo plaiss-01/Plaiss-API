@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma.module';
 import { BlogModule } from './blog/blog.module';
 import { VisualSearchModule } from './visual-search/visual-search.module';
 import { ContactModule } from './contact/contact.module';
+import { EmbeddingsModule } from './embeddings/embeddings.module';
 
 
 @Module({
@@ -23,7 +24,8 @@ import { ContactModule } from './contact/contact.module';
     CategoryModule,
     BlogModule,
     VisualSearchModule,
-    ContactModule
+    ContactModule,
+    EmbeddingsModule
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
