@@ -19,10 +19,11 @@ export function toVectorLiteral(embedding: number[]): string {
   return `[${embedding.join(',')}]`;
 }
 
-// Deliberately NOT in schema.prisma: boot-time `prisma db push` is
-// permanently inert on this project (see PrismaService/awin.service.ts
-// history) - keeping this table outside Prisma's model layer means it can
-// never be affected by that, in either direction. Accessed purely via
+// Deliberately NOT in schema.prisma: `prisma db push` runs on every boot
+// (non-fatal on failure, see start.sh) and actively destroys indexes not
+// declared in schema.prisma on tables Prisma DOES model — that's why
+// awin.controller.ts has ensureSearchIndexes(). Since product_embeddings has
+// NO Prisma model at all, db push cannot act on it. Accessed purely via
 // $executeRawUnsafe/$queryRawUnsafe.
 export const ENSURE_PRODUCT_EMBEDDINGS_TABLE_SQL = [
   `CREATE EXTENSION IF NOT EXISTS vector`,
