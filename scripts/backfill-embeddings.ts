@@ -13,6 +13,11 @@
  * current max workers (4xecm810lylvnt, maxWorkers=2) - going higher just
  * queues, it doesn't go faster.
  *
+ * Note: does not clean up product_embeddings rows for products removed from
+ * the catalogue (orphans are harmlessly excluded by findSimilar's INNER
+ * JOIN, but accumulate in storage/index size - a cleanup pass is a separate
+ * concern, not handled here).
+ *
  *   npx ts-node --compiler-options '{"module":"commonjs"}' scripts/backfill-embeddings.ts --dry-run
  *   npx ts-node --compiler-options '{"module":"commonjs"}' scripts/backfill-embeddings.ts --limit 50
  *   npx ts-node --compiler-options '{"module":"commonjs"}' scripts/backfill-embeddings.ts
@@ -55,6 +60,11 @@ async function embedImage(imageUrl: string): Promise<number[]> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ input: { embed_only: true, image_url: imageUrl } }),
+    // RunPod cold starts can take 30s+; must eventually fail rather than
+    // hang forever - with CONCURRENCY (2) matching the endpoint's
+    // maxWorkers, one hung call would otherwise permanently occupy a lane
+    // for the rest of the run (or stall main() indefinitely if both hang).
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (!response.ok) {
@@ -139,6 +149,13 @@ async function main() {
     if (dryRun) {
       console.log('--dry-run: nothing embedded or written');
       return;
+    }
+
+    // Fail fast with one clear message instead of letting a missing/bad
+    // config surface as the same error logged once per stale product from
+    // inside runPool's per-item try/catch below.
+    if (!process.env.RUNPOD_ENDPOINT_ID || !process.env.RUNPOD_API_KEY) {
+      throw new Error('RUNPOD_ENDPOINT_ID / RUNPOD_API_KEY are not set');
     }
 
     let done = 0;
