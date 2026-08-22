@@ -1043,8 +1043,16 @@ export class AwinService {
     // tables?/desks? are word-bounded so "portable"/"vegetable" don't match.
     // Approved by Raphael 2026-08-09 so /tables has real depth (the old
     // filter only let tables in via dining-set names - ~25 catalogue-wide).
-    // Beds stay OUT deliberately: Debenhams alone ships 112k divan beds.
-    const isOtherDesired = /sofa|couch|settee|chair|rug|decor|plant|kitchen|\btables?\b|\bdesks?\b/i.test(sofaText);
+    // Beds stay OUT deliberately for the catalogue at large: Debenhams alone
+    // ships 112k divan beds, and a bare "bed" keyword would pull all of them
+    // in on the next full re-import. Beds.co.uk (fid 76627) is a single small
+    // merchant (~116 SKUs total) explicitly onboarded for its bed frames /
+    // pet beds, so bed terms are admitted ONLY from that merchant/feed.
+    const merchantNameRaw = (getVal(['merchant_name', 'merchant', 'store_name']) || '').toLowerCase();
+    const dataFeedId = getVal(['data_feed_id']);
+    const isAllowedBedSource = merchantNameRaw === 'beds.co.uk' || dataFeedId === '76627';
+    const isBed = isAllowedBedSource && /\bbeds?\b|\bbed frames?\b/i.test(sofaText);
+    const isOtherDesired = isBed || /sofa|couch|settee|chair|rug|decor|plant|kitchen|\btables?\b|\bdesks?\b/i.test(sofaText);
     const isArtificial = /artificial|plastic|fake|faux|synthetic/i.test(name);
 
     if (
