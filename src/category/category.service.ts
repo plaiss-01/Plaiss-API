@@ -132,7 +132,28 @@ export class CategoryService {
   }
 
   async bulkLink(ids: string[], parentId: string) {
-    return { count: 0 };
+    if (!ids || ids.length === 0) {
+      return { count: 0 };
+    }
+
+    const targetParentId = parentId === 'null' ? null : parentId;
+
+    if (targetParentId) {
+      const parent = await this.prisma.category.findUnique({ where: { id: targetParentId } });
+      if (!parent) throw new NotFoundException('Parent category not found');
+    }
+
+    // A category can't be its own parent - drop it from the batch rather
+    // than fail the whole request over one bad id.
+    const filteredIds = ids.filter((id) => id !== targetParentId);
+
+    const result = await this.prisma.category.updateMany({
+      where: { id: { in: filteredIds } },
+      data: { parentId: targetParentId },
+    });
+
+    this.clearCache();
+    return { count: result.count };
   }
 
   async findOne(id: string) {
