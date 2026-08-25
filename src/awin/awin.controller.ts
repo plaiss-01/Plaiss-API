@@ -899,35 +899,24 @@ export class AwinController implements OnApplicationBootstrap {
           for (const child of children) {
             const descendantIds = getDescendantIds(child.id);
             allCategoryIds.push(...descendantIds);
-            
-            // If NOT under lighting, add descendant terms
-            if (!this.isUnderLighting(child.id, categoryMap)) {
-              allCategoryNames.push(...this.getCategoryTerms(child.name));
-            }
+            allCategoryNames.push(...this.getCategoryTerms(child.name));
           }
         } else {
           allCategoryIds.push(cat.id);
-          // If NOT under lighting, add terms
-          if (!this.isUnderLighting(cat.id, categoryMap)) {
-            allCategoryNames.push(...this.getCategoryTerms(cat.name));
-          }
+          allCategoryNames.push(...this.getCategoryTerms(cat.name));
         }
       }
     }
 
     if (subs) {
       const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
-      
+
       // Also try to find IDs for these sub names
       const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
       allCategoryIds.push(...subCats.map(c => c.id));
 
-      // For subs NOT under lighting, we should ALWAYS add their names/terms to allCategoryNames
       for (const subName of subArray) {
-        const subCat = allCats.find(c => c.name.toLowerCase() === subName.toLowerCase());
-        if (!subCat || !this.isUnderLighting(subCat.id, categoryMap)) {
-          allCategoryNames.push(...this.getCategoryTerms(subName));
-        }
+        allCategoryNames.push(...this.getCategoryTerms(subName));
       }
     }
 
@@ -938,13 +927,22 @@ export class AwinController implements OnApplicationBootstrap {
     // terms. Sofas passes subs=one-seater,two-seater,three-seater — orphan
     // categories no product actually uses — so matching on the subs alone
     // returned zero rows and every facet came back empty, leaving the sidebar
-    // with only Price and Colour. Lighting is the exception: its subs-only
-    // narrowing is deliberate and paired with the furniture exclusion above.
-    // This mirrors the same fix already made in getAllProducts (bffdcbc).
-    if (category && (!subs || !this.isUnderLighting(targetCats[0]?.id, categoryMap))) {
-      const categoryTerms = this.isUnderLighting(targetCats[0]?.id, categoryMap)
-        ? [category]
-        : this.getCategoryTerms(category);
+    // with only Price and Colour.
+    //
+    // Lighting used to be exempted from all of the name-matching above (both
+    // this block and the two loops before it), on the theory that its subs
+    // narrowing was deliberate and the furniture exclusion below covered the
+    // gap. In practice most products — including virtually all of
+    // Lights.co.uk's catalogue — are never linked via the categoryRel FK, so
+    // with every genuine sub name suppressed this fell back to ID-only
+    // matching and returned 114 of the category's 22,615 products. The
+    // furniture exclusion runs unconditionally below regardless of how the
+    // OR-match was built (it keys off `category`/targetCats, not `subs` or
+    // `uniqueNames`), so exempting Lighting here was never load-bearing for
+    // it — removed, Lighting now matches by name exactly like every other
+    // category.
+    if (category) {
+      const categoryTerms = this.getCategoryTerms(category);
       for (const term of categoryTerms) {
         if (!uniqueNames.some(n => n.toLowerCase() === term.toLowerCase())) {
           uniqueNames.push(term);
@@ -1274,35 +1272,24 @@ export class AwinController implements OnApplicationBootstrap {
           for (const child of children) {
             const descendantIds = getDescendantIds(child.id);
             allCategoryIds.push(...descendantIds);
-            
-            // If NOT under lighting, add descendant terms to allCategoryNames
-            if (!this.isUnderLighting(child.id, categoryMap)) {
-              allCategoryNames.push(...this.getCategoryTerms(child.name));
-            }
+            allCategoryNames.push(...this.getCategoryTerms(child.name));
           }
         } else {
           // If category has NO children, use its own ID and Name
           allCategoryIds.push(cat.id);
-          // If NOT under lighting, add terms to allCategoryNames
-          if (!this.isUnderLighting(cat.id, categoryMap)) {
-            allCategoryNames.push(...this.getCategoryTerms(cat.name));
-          }
+          allCategoryNames.push(...this.getCategoryTerms(cat.name));
         }
       }
 
       if (subs) {
         const subArray = subs.split(',').map(s => s.replace(/\+/g, ' ').trim());
-        
+
         // Also try to find IDs for these sub names
         const subCats = allCats.filter(c => subArray.some(s => s.toLowerCase() === c.name.toLowerCase()));
         allCategoryIds.push(...subCats.map(c => c.id));
 
-        // For subs NOT under lighting, we should ALWAYS add their names/terms to allCategoryNames
         for (const subName of subArray) {
-          const subCat = allCats.find(c => c.name.toLowerCase() === subName.toLowerCase());
-          if (!subCat || !this.isUnderLighting(subCat.id, categoryMap)) {
-            allCategoryNames.push(...this.getCategoryTerms(subName));
-          }
+          allCategoryNames.push(...this.getCategoryTerms(subName));
         }
       }
 
@@ -1313,12 +1300,21 @@ export class AwinController implements OnApplicationBootstrap {
       // Without this, a parent category whose subcategories match no products (e.g. the
       // orphan one/two/three-seater subcats under "Sofas") would return 0 rows and trip the
       // parent fallback, dumping the entire top-level "Furniture" bucket into the page.
-      // Lighting is left untouched (its subcategory-only behaviour is intentional and paired
-      // with the aggressive furniture exclusion below), so it keeps skipping when subs exist.
-      if (category && (!subs || !this.isUnderLighting(targetCats[0]?.id, categoryMap))) {
-        const categoryTerms = this.isUnderLighting(targetCats[0]?.id, categoryMap)
-          ? [category]
-          : this.getCategoryTerms(category);
+      //
+      // Lighting used to be exempted from all of the name-matching above (both this
+      // block and the two loops before it), on the theory that its subs narrowing
+      // was deliberate and the furniture exclusion below covered the gap. In
+      // practice most products — including virtually all of Lights.co.uk's
+      // catalogue — are never linked via the categoryRel FK, so with every genuine
+      // sub name suppressed this fell back to ID-only matching and returned 114 of
+      // the category's 22,615 products whenever `subs` was passed (which the
+      // frontend always does for every Lighting page). The furniture exclusion
+      // below runs unconditionally regardless of how the OR-match was built (it
+      // keys off `category`/targetCats, not `subs` or `uniqueNames`), so exempting
+      // Lighting here was never load-bearing for it — removed, Lighting now
+      // matches by name exactly like every other category.
+      if (category) {
+        const categoryTerms = this.getCategoryTerms(category);
         for (const term of categoryTerms) {
           if (!uniqueNames.some(n => n.toLowerCase() === term.toLowerCase())) {
             uniqueNames.push(term);
