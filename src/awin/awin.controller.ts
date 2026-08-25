@@ -104,6 +104,12 @@ const CATEGORY_TYPE_EXCLUSIONS: Record<string, string[]> = {
     'Footstool',
     'Bean Bag',
   ],
+  // Bedside Table is furniture-only in product-type.util.ts's rule sets
+  // (FURNITURE_RULES), never assigned to an actual lamp — "bedside lamp"
+  // is typed Table Lamp under LIGHTING_RULES instead. Excluding by this
+  // canonical type is exact, unlike the old name-substring exclusion below,
+  // which matched "bedside" and hid every genuine bedside lamp/light too.
+  lighting: ['Bedside Table'],
 };
 
 // Substrings that must never appear in a product NAME under a given category,
@@ -986,7 +992,10 @@ export class AwinController implements OnApplicationBootstrap {
           'chair', 'sofa', 'stool', 'bench', 'dining table', 'side table', 
           'coffee table', 'console table', 'dressing table', 'wardrobe', 
           'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe', 
-          'bar table', 'bistro table', 'bedside', 'ottoman'
+          'bar table', 'bistro table', 'ottoman'
+          // 'bedside' deliberately removed: it also matched genuine
+          // "bedside lamp"/"bedside light" names. Real bedside-table
+          // furniture is now excluded via CATEGORY_TYPE_EXCLUSIONS.lighting.
         ];
         const notConditions = nonLightingTerms.map(term => ({
           name: { contains: term, mode: 'insensitive' as const }
@@ -1353,7 +1362,10 @@ export class AwinController implements OnApplicationBootstrap {
           'chair', 'sofa', 'stool', 'bench', 'dining table', 'side table', 
           'coffee table', 'console table', 'dressing table', 'wardrobe', 
           'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe', 
-          'bar table', 'bistro table', 'bedside', 'ottoman'
+          'bar table', 'bistro table', 'ottoman'
+          // 'bedside' deliberately removed: it also matched genuine
+          // "bedside lamp"/"bedside light" names. Real bedside-table
+          // furniture is now excluded via CATEGORY_TYPE_EXCLUSIONS.lighting.
         ];
         const notConditions = nonLightingTerms.map(term => ({
           name: { contains: term, mode: 'insensitive' as const }
