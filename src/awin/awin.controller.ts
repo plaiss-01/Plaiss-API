@@ -104,12 +104,15 @@ const CATEGORY_TYPE_EXCLUSIONS: Record<string, string[]> = {
     'Footstool',
     'Bean Bag',
   ],
-  // Bedside Table is furniture-only in product-type.util.ts's rule sets
-  // (FURNITURE_RULES), never assigned to an actual lamp — "bedside lamp"
-  // is typed Table Lamp under LIGHTING_RULES instead. Excluding by this
-  // canonical type is exact, unlike the old name-substring exclusion below,
-  // which matched "bedside" and hid every genuine bedside lamp/light too.
-  lighting: ['Bedside Table'],
+  // These three are furniture-only in product-type.util.ts's rule sets
+  // (FURNITURE_RULES), never assigned to an actual lamp — "bedside table
+  // lamp" and "bar table lamp" type Table Lamp under LIGHTING_RULES
+  // instead. Excluding by canonical type is exact, unlike the old
+  // name-substring exclusions below: 'bedside' hid every genuine bedside
+  // lamp, and 'side table'/'bar table' hid genuine lamps too, because
+  // "bedside table lamp" contains "side table" and "bar table lamp"
+  // contains "bar table".
+  lighting: ['Bedside Table', 'Side Table', 'Bar Table'],
 };
 
 // Substrings that must never appear in a product NAME under a given category,
@@ -989,13 +992,14 @@ export class AwinController implements OnApplicationBootstrap {
       }
       if (isLightingCategory) {
         const nonLightingTerms = [
-          'chair', 'sofa', 'stool', 'bench', 'dining table', 'side table', 
-          'coffee table', 'console table', 'dressing table', 'wardrobe', 
-          'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe', 
-          'bar table', 'bistro table', 'ottoman'
-          // 'bedside' deliberately removed: it also matched genuine
-          // "bedside lamp"/"bedside light" names. Real bedside-table
-          // furniture is now excluded via CATEGORY_TYPE_EXCLUSIONS.lighting.
+          'chair', 'sofa', 'stool', 'bench', 'dining table',
+          'coffee table', 'console table', 'dressing table', 'wardrobe',
+          'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe',
+          'ottoman'
+          // 'bedside', 'side table', 'bar table' and 'bistro table'
+          // deliberately removed: each also matched a genuine lamp name
+          // ("bedside (table) lamp", "bar table lamp"). That furniture is
+          // now excluded via CATEGORY_TYPE_EXCLUSIONS.lighting instead.
         ];
         const notConditions = nonLightingTerms.map(term => ({
           name: { contains: term, mode: 'insensitive' as const }
@@ -1359,13 +1363,14 @@ export class AwinController implements OnApplicationBootstrap {
       }
       if (isLightingCategory) {
         const nonLightingTerms = [
-          'chair', 'sofa', 'stool', 'bench', 'dining table', 'side table', 
-          'coffee table', 'console table', 'dressing table', 'wardrobe', 
-          'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe', 
-          'bar table', 'bistro table', 'ottoman'
-          // 'bedside' deliberately removed: it also matched genuine
-          // "bedside lamp"/"bedside light" names. Real bedside-table
-          // furniture is now excluded via CATEGORY_TYPE_EXCLUSIONS.lighting.
+          'chair', 'sofa', 'stool', 'bench', 'dining table',
+          'coffee table', 'console table', 'dressing table', 'wardrobe',
+          'chest of drawers', 'mattress', 'bed frame', 'rug', 'pouffe',
+          'ottoman'
+          // 'bedside', 'side table', 'bar table' and 'bistro table'
+          // deliberately removed: each also matched a genuine lamp name
+          // ("bedside (table) lamp", "bar table lamp"). That furniture is
+          // now excluded via CATEGORY_TYPE_EXCLUSIONS.lighting instead.
         ];
         const notConditions = nonLightingTerms.map(term => ({
           name: { contains: term, mode: 'insensitive' as const }
