@@ -16,4 +16,12 @@ export class ContactController {
   async handleContactSubmission(@Body() dto: CreateContactSubmissionDto) {
     return this.contactService.sendContactMessage(dto);
   }
+
+  @Post('subscribe')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Join the launch mailing list' })
+  @ApiResponse({ status: 200, description: 'Email address stored' })
+  async handleSubscribe(@Body() body: { email?: string; source?: string }) {
+    return this.contactService.subscribe(body?.email ?? '', body?.source ?? 'footer');
+  }
 }
