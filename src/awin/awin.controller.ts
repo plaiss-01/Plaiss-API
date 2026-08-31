@@ -1027,7 +1027,20 @@ export class AwinController implements OnApplicationBootstrap {
         }
       }
       if (isChairsCategory) {
-        const officeChairTerms = ['office', 'gaming', 'gamer', 'racing', 'executive', 'ergonomic', 'task chair', 'computer chair', 'desk chair'];
+        // Bare 'office'/'executive' used to match ANY occurrence of those
+        // words, not just as a chair descriptor — a genuine "Nordara Velvet
+        // Padded Dining Chairs...for Kitchen/Home Office" or "HOMCOM Dining
+        // Chairs...Executive Grey" was excluded from /chairs even though
+        // neither is an office chair. Narrowed to the adjacent phrase
+        // ('office chair'/'executive chair'), which still catches every
+        // genuine office/executive chair seen in the catalogue — they
+        // consistently pair the word immediately before "chair", or are
+        // independently caught by 'gaming'/'task chair'/'desk chair'/
+        // 'computer chair' below. Those other terms are left as loose
+        // words deliberately: e.g. "Gaming Chair...Adjustable Reclining"
+        // gets mistyped Recliner, not Office Chair, so 'gaming' alone is
+        // the only signal that still catches it.
+        const officeChairTerms = ['office chair', 'gaming', 'gamer', 'racing', 'executive chair', 'ergonomic', 'task chair', 'computer chair', 'desk chair'];
         const officeNot = officeChairTerms.map(term => ({
           name: { contains: term, mode: 'insensitive' as const }
         }));
@@ -1396,7 +1409,20 @@ export class AwinController implements OnApplicationBootstrap {
         }
       }
       if (isChairsCategory) {
-        const officeChairTerms = ['office', 'gaming', 'gamer', 'racing', 'executive', 'ergonomic', 'task chair', 'computer chair', 'desk chair'];
+        // Bare 'office'/'executive' used to match ANY occurrence of those
+        // words, not just as a chair descriptor — a genuine "Nordara Velvet
+        // Padded Dining Chairs...for Kitchen/Home Office" or "HOMCOM Dining
+        // Chairs...Executive Grey" was excluded from /chairs even though
+        // neither is an office chair. Narrowed to the adjacent phrase
+        // ('office chair'/'executive chair'), which still catches every
+        // genuine office/executive chair seen in the catalogue — they
+        // consistently pair the word immediately before "chair", or are
+        // independently caught by 'gaming'/'task chair'/'desk chair'/
+        // 'computer chair' below. Those other terms are left as loose
+        // words deliberately: e.g. "Gaming Chair...Adjustable Reclining"
+        // gets mistyped Recliner, not Office Chair, so 'gaming' alone is
+        // the only signal that still catches it.
+        const officeChairTerms = ['office chair', 'gaming', 'gamer', 'racing', 'executive chair', 'ergonomic', 'task chair', 'computer chair', 'desk chair'];
         const officeNot = officeChairTerms.map(term => ({
           name: { contains: term, mode: 'insensitive' as const }
         }));
